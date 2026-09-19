@@ -2056,7 +2056,7 @@ namespace QuanLyNhaHang.Services
 
         private static void ApplyXmlProperties(Control ctrl, XmlNode node)
         {
-            XmlNodeList propNodes = node.SelectNodes("./Property");
+            XmlNodeList propNodes = node.SelectNodes(".//Property");
             if (propNodes == null) return;
 
             foreach (XmlNode pNode in propNodes)
@@ -2074,12 +2074,25 @@ namespace QuanLyNhaHang.Services
                     else if (pName.Equals("BackColor", StringComparison.OrdinalIgnoreCase))
                     {
                         Color c = ParseXmlColor(pVal);
-                        if (!c.IsEmpty) ctrl.BackColor = c;
+                        if (!c.IsEmpty)
+                        {
+                            ctrl.BackColor = c;
+                            if (ctrl is Button btn) btn.UseVisualStyleBackColor = false;
+                            else if (ctrl is ButtonBase btnBase) btnBase.UseVisualStyleBackColor = false;
+                        }
                     }
                     else if (pName.Equals("ForeColor", StringComparison.OrdinalIgnoreCase))
                     {
                         Color c = ParseXmlColor(pVal);
                         if (!c.IsEmpty) ctrl.ForeColor = c;
+                    }
+                    else if (pName.Equals("FlatStyle", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (ctrl is Button btn && Enum.TryParse(pVal, true, out FlatStyle fs))
+                        {
+                            btn.FlatStyle = fs;
+                            btn.UseVisualStyleBackColor = false;
+                        }
                     }
                     else if (pName.Equals("Font", StringComparison.OrdinalIgnoreCase))
                     {
