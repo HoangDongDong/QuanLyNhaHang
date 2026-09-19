@@ -1788,6 +1788,9 @@ namespace QuanLyNhaHang.Services
                 // Mount controls onto mainForm
                 if (rootFormCtrl != null)
                 {
+                    rootFormCtrl.Dock = DockStyle.Fill;
+                    mainForm.Controls.Add(rootFormCtrl);
+
                     if (rootFormCtrl.Size.Width > 200 && rootFormCtrl.Size.Height > 200)
                     {
                         mainForm.Size = rootFormCtrl.Size;
@@ -1795,17 +1798,6 @@ namespace QuanLyNhaHang.Services
                     if (!string.IsNullOrEmpty(rootFormCtrl.Text))
                     {
                         mainForm.Text = rootFormCtrl.Text;
-                    }
-
-                    List<Control> rootChildren = new List<Control>();
-                    foreach (Control child in rootFormCtrl.Controls)
-                    {
-                        rootChildren.Add(child);
-                    }
-                    foreach (Control child in rootChildren)
-                    {
-                        mainForm.Controls.Add(child);
-                        child.BringToFront();
                     }
                 }
                 else
@@ -1816,6 +1808,41 @@ namespace QuanLyNhaHang.Services
                         {
                             mainForm.Controls.Add(ctrl);
                             ctrl.BringToFront();
+                        }
+                    }
+                }
+
+                // Post-process buttons & panels for rich color styling
+                foreach (Control c in controlMap.Values)
+                {
+                    if (c is Button btn)
+                    {
+                        btn.UseVisualStyleBackColor = false;
+                        string btnTxt = btn.Text != null ? btn.Text.Trim() : "";
+                        if (btnTxt.Equals("Đi làm", StringComparison.OrdinalIgnoreCase))
+                        {
+                            btn.BackColor = Color.Red;
+                            btn.ForeColor = Color.White;
+                            btn.FlatStyle = FlatStyle.Flat;
+                        }
+                        else if (btnTxt.Equals("Nghỉ có phép", StringComparison.OrdinalIgnoreCase))
+                        {
+                            btn.BackColor = Color.LimeGreen;
+                            btn.ForeColor = Color.White;
+                            btn.FlatStyle = FlatStyle.Flat;
+                        }
+                        else if (btnTxt.Equals("Nghỉ không phép", StringComparison.OrdinalIgnoreCase))
+                        {
+                            btn.BackColor = Color.Cyan;
+                            btn.ForeColor = Color.Black;
+                            btn.FlatStyle = FlatStyle.Flat;
+                        }
+                    }
+                    else if (c is Panel pnl)
+                    {
+                        if (pnl.BackColor == Color.White || pnl.BackColor == Color.Transparent || pnl.BackColor == Color.Empty)
+                        {
+                            pnl.BackColor = Color.FromArgb(165, 196, 229);
                         }
                     }
                 }
