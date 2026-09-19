@@ -1,0 +1,12 @@
+bin/
+obj/
+*.user
+*.suo
+.vs/
+scratch/
+*.exe
+*.dll
+*.pdb
+Database/*.FDB
+Database/*.fdb
+Database/*.LCK
