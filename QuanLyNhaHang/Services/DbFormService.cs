@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Drawing;
+using System.IO;
 using System.Text;
 using System.Windows.Forms;
 using System.Xml;
@@ -2081,6 +2082,23 @@ namespace QuanLyNhaHang.Services
             }
         }
 
+        private static Image ParseBase64Image(string base64Str)
+        {
+            if (string.IsNullOrEmpty(base64Str)) return null;
+            try
+            {
+                byte[] bytes = Convert.FromBase64String(base64Str.Trim());
+                using (MemoryStream ms = new MemoryStream(bytes))
+                {
+                    return Image.FromStream(ms);
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         private static void ApplyXmlProperties(Control ctrl, XmlNode node)
         {
             XmlNodeList propNodes = node.SelectNodes(".//Property");
@@ -2097,6 +2115,28 @@ namespace QuanLyNhaHang.Services
                     if (pName.Equals("Text", StringComparison.OrdinalIgnoreCase))
                     {
                         ctrl.Text = pVal;
+                    }
+                    else if (pName.Equals("Image", StringComparison.OrdinalIgnoreCase) || pName.Equals("Icon", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Image img = ParseBase64Image(pVal);
+                        if (img != null)
+                        {
+                            if (ctrl is Button btn)
+                            {
+                                btn.Image = img;
+                                btn.TextImageRelation = TextImageRelation.ImageBeforeText;
+                                btn.ImageAlign = ContentAlignment.MiddleLeft;
+                            }
+                            else if (ctrl is PictureBox pic)
+                            {
+                                pic.Image = img;
+                            }
+                            else if (ctrl is Label lbl)
+                            {
+                                lbl.Image = img;
+                                lbl.ImageAlign = ContentAlignment.MiddleLeft;
+                            }
+                        }
                     }
                     else if (pName.Equals("BackColor", StringComparison.OrdinalIgnoreCase))
                     {
@@ -2125,6 +2165,34 @@ namespace QuanLyNhaHang.Services
                     {
                         Font f = ParseXmlFont(pVal);
                         if (f != null) ctrl.Font = f;
+                    }
+                    else if (pName.Equals("AlternatingRowsDefaultCellStyle", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (ctrl is DataGridView dgv)
+                        {
+                            XmlNode backNode = pNode.SelectSingleNode(".//Property[@name='BackColor']");
+                            if (backNode != null)
+                            {
+                                Color c = ParseXmlColor(backNode.InnerText);
+                                if (!c.IsEmpty) dgv.AlternatingRowsDefaultCellStyle.BackColor = c;
+                            }
+                        }
+                    }
+                    else if (pName.Equals("ColumnHeadersDefaultCellStyle", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (ctrl is DataGridView dgv)
+                        {
+                            XmlNode backNode = pNode.SelectSingleNode(".//Property[@name='BackColor']");
+                            if (backNode != null)
+                            {
+                                Color c = ParseXmlColor(backNode.InnerText);
+                                if (!c.IsEmpty)
+                                {
+                                    dgv.EnableHeadersVisualStyles = false;
+                                    dgv.ColumnHeadersDefaultCellStyle.BackColor = c;
+                                }
+                            }
+                        }
                     }
                     else if (pName.Equals("TextAlign", StringComparison.OrdinalIgnoreCase))
                     {
