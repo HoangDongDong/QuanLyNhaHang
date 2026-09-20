@@ -1565,7 +1565,7 @@ namespace QuanLyNhaHang
             Form hostedForm = null;
             try
             {
-                hostedForm = DbFormService.CreateFormByName(model.Name);
+                hostedForm = DbFormService.CreateFormFromModel(model);
                 if (hostedForm != null)
                 {
                     Panel pnlFormWindow = CreateFormDesignWindowFrame(hostedForm, propGrid, cboObjectSelector, onJumpToCode, undoManager);
@@ -1907,11 +1907,11 @@ namespace QuanLyNhaHang
 
         private Panel CreateFormDesignWindowFrame(Form hostedForm, PropertyGrid propGrid, ComboBox cboObjectSelector = null, Action<string> onJumpToCode = null, DesignUndoManager undoManager = null)
         {
-            int formW = (hostedForm != null && hostedForm.Width > 350) ? hostedForm.Width : 1024;
-            int formH = (hostedForm != null && hostedForm.Height > 350) ? hostedForm.Height : 545;
-            if (hostedForm != null && (hostedForm.Width <= 350 || hostedForm.Height <= 350))
+            int formW = (hostedForm != null && hostedForm.ClientSize.Width >= 100) ? hostedForm.ClientSize.Width : 600;
+            int formH = (hostedForm != null && hostedForm.ClientSize.Height >= 100) ? hostedForm.ClientSize.Height : 400;
+            if (hostedForm != null)
             {
-                hostedForm.Size = new Size(formW, formH);
+                hostedForm.ClientSize = new Size(formW, formH);
             }
 
             bool isUserControl = false;

@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Data;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Text;
+using System.Reflection;
 using System.Windows.Forms;
 using System.Xml;
 using FirebirdSql.Data.FirebirdClient;
@@ -56,6 +58,22 @@ namespace QuanLyNhaHang.Services
             };
 
             return builder.ConnectionString;
+        }
+
+        public static Form CreateFormFromModel(FormModel model)
+        {
+            if (model == null) return new Form { Size = new Size(800, 500) };
+
+            if (!string.IsNullOrEmpty(model.AeLayout) && model.AeLayout.Trim().Length > 20)
+            {
+                Form xmlForm = ParseAeLayoutToForm(model.AeLayout, model.Name);
+                if (xmlForm != null)
+                {
+                    return xmlForm;
+                }
+            }
+
+            return CreateFormByName(model.Name ?? model.Id);
         }
 
         public static Form CreateFormByName(string formName)
@@ -146,49 +164,94 @@ namespace QuanLyNhaHang.Services
 
         public static FormModel GetFormModelFromDb(string formName)
         {
-            string connStr = GetConnectionString();
-            try
-            {
-                using (FbConnection conn = new FbConnection(connStr))
-                {
-                    conn.Open();
-                    string query = @"SELECT ID, NAME, CLASSNAME, FORMTYPE, LOAI, STABLEDESCID, SFUNCTIONID, NOTEMPLATE, NOTE,
-                                            CODE, DESIGNCODE, AELAYOUT, CLIENTCODE, SERVERCODE, IMAGE32 
-                                     FROM SFORM 
-                                     WHERE LOWER(NAME) = LOWER(@Name) OR LOWER(CLASSNAME) = LOWER(@Name) OR ID = @Name";
+            if (string.IsNullOrEmpty(formName)) return null;
 
-                    using (FbCommand cmd = new FbCommand(query, conn))
+            List<string> dbsToTry = new List<string>();
+            string primaryStr = GetConnectionString();
+            if (!string.IsNullOrEmpty(primaryStr)) dbsToTry.Add(primaryStr);
+
+            string mainPath = @"D:\QuanLyNhaHang\Database\mainTanAnPhat.fdb";
+            string mainConnStr = GetConnectionString(mainPath);
+            if (!dbsToTry.Contains(mainConnStr) && File.Exists(mainPath)) dbsToTry.Add(mainConnStr);
+
+            string xPath = @"D:\QuanLyNhaHang\Database\x.fdb";
+            string xConnStr = GetConnectionString(xPath);
+            if (!dbsToTry.Contains(xConnStr) && File.Exists(xPath)) dbsToTry.Add(xConnStr);
+
+            string sPath = @"D:\QuanLyNhaHang\Database\s.fdb";
+            string sConnStr = GetConnectionString(sPath);
+            if (!dbsToTry.Contains(sConnStr) && File.Exists(sPath)) dbsToTry.Add(sConnStr);
+
+            FormModel bestModel = null;
+
+            foreach (string connStr in dbsToTry)
+            {
+                try
+                {
+                    using (FbConnection conn = new FbConnection(connStr))
                     {
-                        cmd.Parameters.AddWithValue("@Name", formName);
-                        using (FbDataReader reader = cmd.ExecuteReader())
+                        conn.Open();
+                        string query = @"SELECT ID, NAME, CLASSNAME, FORMTYPE, LOAI, STABLEDESCID, SFUNCTIONID, NOTEMPLATE, NOTE,
+                                                CODE, DESIGNCODE, AELAYOUT, CLIENTCODE, SERVERCODE, IMAGE32 
+                                         FROM SFORM 
+                                         WHERE NAME = @Name OR CLASSNAME = @Name OR ID = @Name 
+                                            OR LOWER(NAME) = LOWER(@Name) OR LOWER(CLASSNAME) = LOWER(@Name)";
+
+                        using (FbCommand cmd = new FbCommand(query, conn))
                         {
-                            if (reader.Read())
+                            cmd.Parameters.AddWithValue("@Name", formName);
+                            using (FbDataReader reader = cmd.ExecuteReader())
                             {
-                                return new FormModel
+                                if (reader.Read())
                                 {
-                                    Id = reader["ID"]?.ToString(),
-                                    Name = reader["NAME"]?.ToString(),
-                                    ClassName = reader["CLASSNAME"]?.ToString(),
-                                    FormType = reader["FORMTYPE"] != DBNull.Value ? Convert.ToInt32(reader["FORMTYPE"]) : 0,
-                                    Loai = reader["LOAI"] != DBNull.Value ? Convert.ToInt32(reader["LOAI"]) : 0,
-                                    STableDescId = reader["STABLEDESCID"]?.ToString(),
-                                    SFunctionId = reader["SFUNCTIONID"]?.ToString(),
-                                    BillCode = reader["NOTEMPLATE"]?.ToString(),
-                                    Note = reader["NOTE"]?.ToString(),
-                                    Code = ReadBlobString(reader, "CODE"),
-                                    DesignCode = ReadBlobString(reader, "DESIGNCODE"),
-                                    AeLayout = ReadBlobString(reader, "AELAYOUT"),
-                                    ClientCode = ReadBlobString(reader, "CLIENTCODE"),
-                                    ServerCode = ReadBlobString(reader, "SERVERCODE"),
-                                    ImageBytes = ReadBlobBytes(reader, "IMAGE32")
-                                };
+                                    FormModel model = new FormModel
+                                    {
+                                        Id = reader["ID"]?.ToString(),
+                                        Name = reader["NAME"]?.ToString(),
+                                        ClassName = reader["CLASSNAME"]?.ToString(),
+                                        FormType = reader["FORMTYPE"] != DBNull.Value ? Convert.ToInt32(reader["FORMTYPE"]) : 0,
+                                        Loai = reader["LOAI"] != DBNull.Value ? Convert.ToInt32(reader["LOAI"]) : 0,
+                                        STableDescId = reader["STABLEDESCID"]?.ToString(),
+                                        SFunctionId = reader["SFUNCTIONID"]?.ToString(),
+                                        BillCode = reader["NOTEMPLATE"]?.ToString(),
+                                        Note = reader["NOTE"]?.ToString(),
+                                        Code = ReadBlobString(reader, "CODE"),
+                                        DesignCode = ReadBlobString(reader, "DESIGNCODE"),
+                                        AeLayout = ReadBlobString(reader, "AELAYOUT"),
+                                        ClientCode = ReadBlobString(reader, "CLIENTCODE"),
+                                        ServerCode = ReadBlobString(reader, "SERVERCODE"),
+                                        ImageBytes = ReadBlobBytes(reader, "IMAGE32")
+                                    };
+
+                                    if (bestModel == null) bestModel = model;
+
+                                    if (!string.IsNullOrEmpty(model.AeLayout) && model.AeLayout.Trim().Length > 20)
+                                    {
+                                        return model;
+                                    }
+                                }
                             }
                         }
                     }
                 }
+                catch { }
             }
-            catch { }
-            return null;
+
+            if (bestModel == null || string.IsNullOrEmpty(bestModel.AeLayout))
+            {
+                List<FormModel> allForms = LoadAllForms();
+                FormModel matched = allForms.FirstOrDefault(f =>
+                    string.Equals(f.Id, formName, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(f.Name, formName, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(f.ClassName, formName, StringComparison.OrdinalIgnoreCase) ||
+                    (f.Name != null && f.Name.IndexOf(formName, StringComparison.OrdinalIgnoreCase) >= 0));
+                if (matched != null && !string.IsNullOrEmpty(matched.AeLayout))
+                {
+                    return matched;
+                }
+            }
+
+            return bestModel;
         }
 
         private static Form CreateDynamicSuDungDichVuForm(FormModel model)
@@ -1131,10 +1194,18 @@ namespace QuanLyNhaHang.Services
                 int ordinal = reader.GetOrdinal(columnName);
                 if (reader.IsDBNull(ordinal)) return string.Empty;
 
-                byte[] buffer = (byte[])reader.GetValue(ordinal);
-                if (buffer == null || buffer.Length == 0) return string.Empty;
+                object val = reader.GetValue(ordinal);
+                if (val == null || val == DBNull.Value) return string.Empty;
 
-                return Encoding.UTF8.GetString(buffer);
+                if (val is string strVal) return strVal;
+
+                if (val is byte[] buffer)
+                {
+                    if (buffer.Length == 0) return string.Empty;
+                    return Encoding.UTF8.GetString(buffer);
+                }
+
+                return val.ToString();
             }
             catch
             {
@@ -1538,10 +1609,13 @@ namespace QuanLyNhaHang.Services
         }
         public static Form ParseAeLayoutToForm(string aeLayoutXml, string formTitle = "")
         {
+            int defaultW = (formTitle != null && (formTitle.IndexOf("khu vực", StringComparison.OrdinalIgnoreCase) >= 0 || formTitle.IndexOf("máy in", StringComparison.OrdinalIgnoreCase) >= 0 || formTitle.IndexOf("chuyển", StringComparison.OrdinalIgnoreCase) >= 0)) ? 546 : 600;
+            int defaultH = (formTitle != null && (formTitle.IndexOf("khu vực", StringComparison.OrdinalIgnoreCase) >= 0 || formTitle.IndexOf("máy in", StringComparison.OrdinalIgnoreCase) >= 0 || formTitle.IndexOf("chuyển", StringComparison.OrdinalIgnoreCase) >= 0)) ? 374 : 400;
+
             Form mainForm = new Form
             {
                 Text = formTitle,
-                Size = new Size(1024, 545),
+                Size = new Size(defaultW, defaultH),
                 BackColor = Color.White
             };
 
@@ -1588,11 +1662,22 @@ namespace QuanLyNhaHang.Services
                         {
                             headerText = textNode.InnerText.Trim();
                         }
-                        DataGridViewTextBoxColumn col = new DataGridViewTextBoxColumn
+
+                        DataGridViewColumn col;
+                        if (lowerType.Contains("combobox"))
                         {
-                            Name = name,
-                            HeaderText = headerText
-                        };
+                            col = new DataGridViewComboBoxColumn { Name = name, HeaderText = headerText, AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill };
+                        }
+                        else if (lowerType.Contains("checkbox"))
+                        {
+                            col = new DataGridViewCheckBoxColumn { Name = name, HeaderText = headerText };
+                        }
+                        else
+                        {
+                            col = new DataGridViewTextBoxColumn { Name = name, HeaderText = headerText, AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill };
+                        }
+
+                        ApplyColumnXmlProperties(col, node);
                         columnMap[name] = col;
                         continue;
                     }
@@ -1604,12 +1689,14 @@ namespace QuanLyNhaHang.Services
                         if (textNode != null && !string.IsNullOrEmpty(textNode.InnerText)) btnText = textNode.InnerText.Trim();
 
                         ToolStripButton tsb = new ToolStripButton(btnText) { Name = name };
+                        ApplyToolStripItemXmlProperties(tsb, node);
                         itemMap[name] = tsb;
                         continue;
                     }
                     if (lowerType.Contains("toolstripseparator"))
                     {
                         ToolStripSeparator sep = new ToolStripSeparator { Name = name };
+                        ApplyToolStripItemXmlProperties(sep, node);
                         itemMap[name] = sep;
                         continue;
                     }
@@ -1620,6 +1707,7 @@ namespace QuanLyNhaHang.Services
                         if (textNode != null && !string.IsNullOrEmpty(textNode.InnerText)) lblText = textNode.InnerText.Trim();
 
                         ToolStripLabel tsl = new ToolStripLabel(lblText) { Name = name };
+                        ApplyToolStripItemXmlProperties(tsl, node);
                         itemMap[name] = tsl;
                         continue;
                     }
@@ -1642,7 +1730,8 @@ namespace QuanLyNhaHang.Services
                     ApplyXmlProperties(ctrl, node);
                     controlMap[name] = ctrl;
 
-                    if (rootFormCtrl == null && (lowerType.Contains("form") || lowerType.Contains("usercontrol")))
+                    bool isFormNode = lowerType.Contains("no1form") || lowerType.EndsWith(".form") || lowerType.Contains("usercontrol") || (lowerType.Contains("form") && !lowerType.Contains("system.windows.forms"));
+                    if (rootFormCtrl == null && isFormNode)
                     {
                         rootFormCtrl = ctrl;
                     }
@@ -1662,11 +1751,12 @@ namespace QuanLyNhaHang.Services
                         {
                             if (columnMap.TryGetValue(childName, out DataGridViewColumn colObj))
                             {
-                                if (parentCtrl is DataGridView dgv)
+                                DataGridView targetDgv = GetInnerDataGridView(parentCtrl);
+                                if (targetDgv != null)
                                 {
-                                    if (!dgv.Columns.Contains(colObj.Name))
+                                    if (!targetDgv.Columns.Contains(colObj.Name))
                                     {
-                                        dgv.Columns.Add(colObj);
+                                        targetDgv.Columns.Add(colObj);
                                     }
                                 }
                                 continue;
@@ -1685,6 +1775,41 @@ namespace QuanLyNhaHang.Services
                                     ts.Items.Add(tsb);
                                     continue;
                                 }
+                            }
+
+                            if (parentCtrl is ComponentFactory.Krypton.Navigator.KryptonNavigator knav)
+                            {
+                                if (controlMap.TryGetValue(childName, out Control childCtrl))
+                                {
+                                    if (childCtrl is ComponentFactory.Krypton.Navigator.KryptonPage kPage)
+                                    {
+                                        if (!knav.Pages.Contains(kPage))
+                                        {
+                                            knav.Pages.Add(kPage);
+                                        }
+                                        hasParent.Add(kPage);
+                                    }
+                                    else
+                                    {
+                                        ComponentFactory.Krypton.Navigator.KryptonPage newKp = new ComponentFactory.Krypton.Navigator.KryptonPage(!string.IsNullOrEmpty(childCtrl.Text) ? childCtrl.Text : childCtrl.Name);
+                                        childCtrl.Dock = DockStyle.Fill;
+                                        newKp.Controls.Add(childCtrl);
+                                        knav.Pages.Add(newKp);
+                                        hasParent.Add(childCtrl);
+                                    }
+                                }
+                                continue;
+                            }
+
+                            if (parentCtrl is ComponentFactory.Krypton.Navigator.KryptonPage targetKPage)
+                            {
+                                if (controlMap.TryGetValue(childName, out Control childCtrl))
+                                {
+                                    targetKPage.Controls.Add(childCtrl);
+                                    childCtrl.BringToFront();
+                                    hasParent.Add(childCtrl);
+                                }
+                                continue;
                             }
 
                             if (parentCtrl is TabControl tc)
@@ -1721,9 +1846,27 @@ namespace QuanLyNhaHang.Services
 
                             if (controlMap.TryGetValue(childName, out Control cCtrl) && cCtrl != parentCtrl)
                             {
-                                if (parentCtrl is SplitContainer sc)
+                                if (cCtrl is Form fCtrl)
                                 {
-                                    // Check if child is inside Panel2
+                                    fCtrl.TopLevel = false;
+                                }
+
+                                if (parentCtrl is ComponentFactory.Krypton.Toolkit.KryptonSplitContainer ksc)
+                                {
+                                    XmlNode p2Node = parentNode != null ? parentNode.SelectSingleNode(".//Property[@name='Panel2']") : null;
+                                    bool inPanel2 = p2Node != null && p2Node.SelectSingleNode($".//Reference[@name='{childName}']") != null;
+
+                                    if (inPanel2)
+                                    {
+                                        ksc.Panel2.Controls.Add(cCtrl);
+                                    }
+                                    else
+                                    {
+                                        ksc.Panel1.Controls.Add(cCtrl);
+                                    }
+                                }
+                                else if (parentCtrl is SplitContainer sc)
+                                {
                                     XmlNode p2Node = parentNode != null ? parentNode.SelectSingleNode(".//Property[@name='Panel2']") : null;
                                     bool inPanel2 = p2Node != null && p2Node.SelectSingleNode($".//Reference[@name='{childName}']") != null;
 
@@ -1738,68 +1881,239 @@ namespace QuanLyNhaHang.Services
                                 }
                                 else
                                 {
-                                    parentCtrl.Controls.Add(cCtrl);
+                                    SafeAddChildControl(parentCtrl, cCtrl);
+                                    if (cCtrl.Dock == DockStyle.Fill)
+                                    {
+                                        SafeSendToBack(cCtrl);
+                                    }
+                                    else
+                                    {
+                                        SafeBringToFront(cCtrl);
+                                    }
                                 }
-                                cCtrl.BringToFront();
                                 hasParent.Add(cCtrl);
                             }
                         }
                     }
                 }
 
-                // Pass 3: Arrange stacked controls inside SplitContainer Panel2 in correct top-to-bottom XML order
-                foreach (Control ctrl in controlMap.Values)
+                // Pass 2.5: Ensure all unassigned columns in columnMap are added to the DataGridView(s)
+                List<DataGridView> allGrids = controlMap.Values.Select(c => GetInnerDataGridView(c)).Where(g => g != null).Distinct().ToList();
+                if (allGrids.Count > 0)
                 {
-                    if (ctrl is SplitContainer sc && sc.Panel2.Controls.Count > 0)
+                    DataGridView targetDgv = allGrids.FirstOrDefault(g => g.Name.Equals("grMain", StringComparison.OrdinalIgnoreCase)) ?? allGrids[0];
+                    foreach (var colKvp in columnMap)
                     {
-                        if (sc.Tag is int customDist && customDist > 10)
+                        DataGridViewColumn colObj = colKvp.Value;
+                        bool alreadyAdded = allGrids.Any(g => g.Columns.Contains(colObj.Name));
+                        if (!alreadyAdded)
                         {
-                            try { sc.SplitterDistance = customDist; } catch { }
+                            targetDgv.Columns.Add(colObj);
                         }
-                        else
+                    }
+                }
+
+                // Pass 2.6: Dynamically populate printer choices for DataGridViewComboBoxColumns from Windows system printers
+                foreach (var dgv in allGrids)
+                {
+                    if (dgv.Columns.Count > 0)
+                    {
+                        foreach (DataGridViewColumn col in dgv.Columns)
                         {
-                            sc.SplitterDistance = Math.Max(380, sc.Width / 2);
-                        }
-
-                        List<Control> p2Controls = new List<Control>();
-                        foreach (Control c in sc.Panel2.Controls) p2Controls.Add(c);
-
-                        p2Controls.Sort((a, b) => a.Location.Y.CompareTo(b.Location.Y));
-
-                        // Dock in reverse order so top item remains at top
-                        for (int i = p2Controls.Count - 1; i >= 0; i--)
-                        {
-                            Control c = p2Controls[i];
-                            if (c is DataGridView grid)
+                            if (col is DataGridViewComboBoxColumn comboCol && comboCol.Items.Count == 0)
                             {
-                                grid.Dock = DockStyle.Top;
-                                grid.Height = Math.Max(65, c.Height > 30 ? c.Height : 75);
-                                grid.BringToFront();
-                            }
-                            else if (c is TextBox txt)
-                            {
-                                txt.Dock = DockStyle.Top;
-                                txt.Height = Math.Max(30, c.Height);
-                                txt.BringToFront();
+                                try
+                                {
+                                    comboCol.Items.Add("(Mặc định hệ thống)");
+                                    foreach (string printer in System.Drawing.Printing.PrinterSettings.InstalledPrinters)
+                                    {
+                                        if (!comboCol.Items.Contains(printer))
+                                        {
+                                            comboCol.Items.Add(printer);
+                                        }
+                                    }
+                                }
+                                catch { }
                             }
                         }
                     }
                 }
 
+                // Pass 2.7: Smart layout positioning & Krypton panel styling for top/bottom panels & controls (prevent overlapping)
+                foreach (Control parent in controlMap.Values.Concat(new[] { rootFormCtrl }).Where(p => p != null))
+                {
+                    Color kryptonBlue = Color.FromArgb(165, 196, 229);
+                    List<Control> childControls = parent.Controls.OfType<Control>().ToList();
+
+                    foreach (Control child in childControls)
+                    {
+                        if (child is Panel pnl)
+                        {
+                            if (pnl.Dock == DockStyle.Bottom)
+                            {
+                                if (pnl.BackColor == Color.White || pnl.BackColor == Color.Empty || pnl.BackColor == Color.Transparent)
+                                {
+                                    pnl.BackColor = kryptonBlue;
+                                }
+                                SafeBringToFront(pnl);
+                            }
+                            else if (pnl.Dock == DockStyle.Top)
+                            {
+                                if (pnl.BackColor == Color.White || pnl.BackColor == Color.Empty || pnl.BackColor == Color.Transparent)
+                                {
+                                    pnl.BackColor = kryptonBlue;
+                                }
+                                SafeBringToFront(pnl);
+                            }
+                        }
+                        else if (child is SplitContainer || child is ComponentFactory.Krypton.Toolkit.KryptonSplitContainer)
+                        {
+                            if (child.Dock == DockStyle.None) child.Dock = DockStyle.Fill;
+                            SafeSendToBack(child);
+                        }
+                    }
+                }
+
+                // Pass 3: Arrange stacked controls inside panels in correct WinForms Docking Z-order
+                Action<Control> handleSplitPanelControls = (panel) =>
+                {
+                    if (panel == null || panel.Controls.Count <= 1) return;
+                    List<Control> pControls = panel.Controls.OfType<Control>().ToList();
+
+                    List<Control> sideControls = pControls.Where(c => c.Dock == DockStyle.Left || c.Dock == DockStyle.Right).OrderBy(c => c.Location.X).ToList();
+                    List<Control> topControls = pControls.Where(c => c.Dock == DockStyle.Top).OrderByDescending(c => c.Location.Y).ToList();
+                    List<Control> bottomControls = pControls.Where(c => c.Dock == DockStyle.Bottom).OrderBy(c => c.Location.Y).ToList();
+                    List<Control> fillControls = pControls.Where(c => c.Dock == DockStyle.Fill).ToList();
+
+                    if (sideControls.Count > 0 || topControls.Count > 0 || bottomControls.Count > 0 || fillControls.Count > 0)
+                    {
+                        foreach (Control c in fillControls) c.SendToBack();
+                        foreach (Control c in bottomControls) c.SendToBack();
+                        foreach (Control c in topControls) c.SendToBack();
+                        foreach (Control c in sideControls) c.SendToBack();
+                    }
+                };
+
+                foreach (Control ctrl in controlMap.Values.Concat(new[] { rootFormCtrl }))
+                {
+                    if (ctrl != null)
+                    {
+                        if (ctrl is SplitContainer sc)
+                        {
+                            handleSplitPanelControls(sc.Panel1);
+                            handleSplitPanelControls(sc.Panel2);
+                        }
+                        else if (ctrl is ComponentFactory.Krypton.Toolkit.KryptonSplitContainer ksc)
+                        {
+                            handleSplitPanelControls(ksc.Panel1);
+                            handleSplitPanelControls(ksc.Panel2);
+                        }
+                        else
+                        {
+                            handleSplitPanelControls(ctrl);
+                        }
+                    }
+                }
+
+                // Ensure all created controls are recursively visible
+                Action<Control> forceVisible = null;
+                forceVisible = (c) =>
+                {
+                    if (c == null) return;
+                    if (c.Name == "toolbar" && c.Parent is No1Lib.Sys.GridMapper gm && !gm.ShowToolbar)
+                    {
+                        c.Visible = false;
+                        return;
+                    }
+                    c.Visible = true;
+                    foreach (Control child in c.Controls)
+                    {
+                        forceVisible(child);
+                    }
+                };
+
+                foreach (Control c in controlMap.Values)
+                {
+                    forceVisible(c);
+                    DataGridView gridToPopulate = GetInnerDataGridView(c);
+                    if (gridToPopulate != null && gridToPopulate.Rows.Count == 0)
+                    {
+                        PopulateDynamicGridRows(gridToPopulate, formTitle);
+                    }
+                }
+
+                // Pass 3.5: Auto-hide GridMapper's default inner toolbar when container has a custom ToolStrip or ShowToolbar=false
+                foreach (Control container in controlMap.Values.Concat(new[] { rootFormCtrl }).Where(c => c != null))
+                {
+                    var toolstrips = container.Controls.OfType<ToolStrip>().Where(ts => ts.Name != "toolbar").ToList();
+                    bool hasCustomTs = toolstrips.Count > 0;
+
+                    foreach (Control child in container.Controls)
+                    {
+                        if (child is No1Lib.Sys.GridMapper gm)
+                        {
+                            if (hasCustomTs || !gm.ShowToolbar)
+                            {
+                                gm.ShowToolbar = false;
+                                Control innerTb = gm.Controls["toolbar"];
+                                if (innerTb != null) innerTb.Visible = false;
+                            }
+                        }
+                        else
+                        {
+                            PropertyInfo piShow = child.GetType().GetProperty("ShowToolbar");
+                            if (piShow != null && piShow.CanWrite && hasCustomTs)
+                            {
+                                try { piShow.SetValue(child, false, null); } catch { }
+                            }
+                            Control innerTb = child.Controls["toolbar"];
+                            if (innerTb != null && hasCustomTs) innerTb.Visible = false;
+                        }
+                    }
+
+                    if (hasCustomTs)
+                    {
+                        foreach (var ts in toolstrips)
+                        {
+                            ts.Dock = DockStyle.Top;
+                            SafeBringToFront(ts);
+                        }
+                    }
+                }
+
+                // Calculate exact form size dynamically based on control bounds & XML root size
+                int calculatedW = 380;
+                int calculatedH = 220;
+
+                foreach (Control c in controlMap.Values)
+                {
+                    if (c.Right > calculatedW && c.Right < 1600) calculatedW = c.Right;
+                    if (c.Bottom > calculatedH && c.Bottom < 1200) calculatedH = c.Bottom;
+                }
+
+                if (rootFormCtrl != null && rootFormCtrl.Width > 200 && rootFormCtrl.Height > 150)
+                {
+                    calculatedW = Math.Max(calculatedW, rootFormCtrl.Width);
+                    calculatedH = Math.Max(calculatedH, rootFormCtrl.Height);
+                }
+
+                mainForm.Size = new Size(calculatedW + 16, calculatedH + 38);
+                mainForm.ClientSize = new Size(calculatedW, calculatedH);
+
                 // Mount controls onto mainForm
                 if (rootFormCtrl != null)
                 {
+                    if (rootFormCtrl is Form rForm)
+                    {
+                        rForm.TopLevel = false;
+                    }
                     rootFormCtrl.Dock = DockStyle.Fill;
                     mainForm.Controls.Add(rootFormCtrl);
-
-                    if (rootFormCtrl.Size.Width > 200 && rootFormCtrl.Size.Height > 200)
-                    {
-                        mainForm.Size = rootFormCtrl.Size;
-                    }
                     if (!string.IsNullOrEmpty(rootFormCtrl.Text))
                     {
                         mainForm.Text = rootFormCtrl.Text;
                     }
+                    forceVisible(rootFormCtrl);
                 }
                 else
                 {
@@ -1807,46 +2121,57 @@ namespace QuanLyNhaHang.Services
                     {
                         if (!hasParent.Contains(ctrl))
                         {
+                            if (ctrl is Form fCtrl)
+                            {
+                                fCtrl.TopLevel = false;
+                            }
                             mainForm.Controls.Add(ctrl);
-                            ctrl.BringToFront();
+                            SafeBringToFront(ctrl);
+                            forceVisible(ctrl);
                         }
                     }
                 }
 
-                // Post-process buttons & panels for rich color styling
-                foreach (Control c in controlMap.Values)
+                // Apply SplitterDistance after form and containers have valid sizes & on Load
+                Action applySplitters = () =>
                 {
-                    if (c is Button btn)
+                    foreach (Control c in controlMap.Values)
                     {
-                        btn.UseVisualStyleBackColor = false;
-                        string btnTxt = btn.Text != null ? btn.Text.Trim() : "";
-                        if (btnTxt.Equals("Đi làm", StringComparison.OrdinalIgnoreCase))
+                        int tagDist = (c.Tag is int dist && dist > 5) ? dist : -1;
+
+                        if (c is SplitContainer sc)
                         {
-                            btn.BackColor = Color.Red;
-                            btn.ForeColor = Color.White;
-                            btn.FlatStyle = FlatStyle.Flat;
+                            int currentDist = tagDist > 5 ? tagDist : (sc.Orientation == Orientation.Vertical ? sc.Width : sc.Height) / 2;
+                            int maxLimit = (sc.Orientation == Orientation.Vertical ? sc.Width : sc.Height) - 20;
+                            if (maxLimit > 20 && currentDist > 5)
+                            {
+                                try { sc.SplitterDistance = Math.Max(10, Math.Min(currentDist, maxLimit)); } catch { }
+                            }
                         }
-                        else if (btnTxt.Equals("Nghỉ có phép", StringComparison.OrdinalIgnoreCase))
+                        else if (c is ComponentFactory.Krypton.Toolkit.KryptonSplitContainer ksc)
                         {
-                            btn.BackColor = Color.LimeGreen;
-                            btn.ForeColor = Color.White;
-                            btn.FlatStyle = FlatStyle.Flat;
+                            int currentDist = tagDist > 5 ? tagDist : (ksc.Orientation == Orientation.Vertical ? ksc.Width : ksc.Height) / 2;
+                            int maxLimit = (ksc.Orientation == Orientation.Vertical ? ksc.Width : ksc.Height) - 20;
+                            if (maxLimit > 20 && currentDist > 5)
+                            {
+                                try { ksc.SplitterDistance = Math.Max(10, Math.Min(currentDist, maxLimit)); } catch { }
+                            }
                         }
-                        else if (btnTxt.Equals("Nghỉ không phép", StringComparison.OrdinalIgnoreCase))
+                        else
                         {
-                            btn.BackColor = Color.Cyan;
-                            btn.ForeColor = Color.Black;
-                            btn.FlatStyle = FlatStyle.Flat;
+                            PropertyInfo pi = c.GetType().GetProperty("SplitterDistance");
+                            if (pi != null && pi.CanWrite && tagDist > 5)
+                            {
+                                try { pi.SetValue(c, tagDist, null); } catch { }
+                            }
                         }
                     }
-                    else if (c is Panel pnl)
-                    {
-                        if (pnl.BackColor == Color.White || pnl.BackColor == Color.Transparent || pnl.BackColor == Color.Empty)
-                        {
-                            pnl.BackColor = Color.FromArgb(165, 196, 229);
-                        }
-                    }
-                }
+                };
+
+                applySplitters();
+                mainForm.Load += (s, e) => applySplitters();
+                forceVisible(mainForm);
+
                 Dictionary<string, string> formMetaProps = new Dictionary<string, string>();
                 if (rootFormCtrl != null && nodeMap.TryGetValue(rootFormCtrl.Name, out XmlNode rootNode))
                 {
@@ -1875,14 +2200,452 @@ namespace QuanLyNhaHang.Services
             }
             catch (Exception ex)
             {
+                Console.WriteLine("ParseAeLayoutToForm error: " + ex);
                 System.Diagnostics.Debug.WriteLine("ParseAeLayoutToForm error: " + ex.Message);
             }
 
             return mainForm;
         }
 
+        private static void SafeBringToFront(Control c)
+        {
+            if (c == null) return;
+            try
+            {
+                if (c.Parent != null && !(c.Parent is SplitContainer))
+                {
+                    c.BringToFront();
+                }
+            }
+            catch { }
+        }
+
+        private static void SafeSendToBack(Control c)
+        {
+            if (c == null) return;
+            try
+            {
+                if (c.Parent != null && !(c.Parent is SplitContainer))
+                {
+                    c.SendToBack();
+                }
+            }
+            catch { }
+        }
+
+        private static void SafeAddChildControl(Control parentCtrl, Control childCtrl)
+        {
+            if (parentCtrl == null || childCtrl == null) return;
+            try
+            {
+                if (parentCtrl is ComponentFactory.Krypton.Toolkit.KryptonHeaderGroup khg)
+                {
+                    khg.Panel.Controls.Add(childCtrl);
+                    return;
+                }
+                if (parentCtrl is ComponentFactory.Krypton.Toolkit.KryptonGroup kg)
+                {
+                    kg.Panel.Controls.Add(childCtrl);
+                    return;
+                }
+                if (parentCtrl is ToolStrip ts)
+                {
+                    ToolStripButton tsb = new ToolStripButton(!string.IsNullOrEmpty(childCtrl.Text) ? childCtrl.Text : childCtrl.Name) { Name = childCtrl.Name };
+                    ts.Items.Add(tsb);
+                    return;
+                }
+
+                parentCtrl.Controls.Add(childCtrl);
+            }
+            catch
+            {
+                try
+                {
+                    var panelProp = parentCtrl.GetType().GetProperty("Panel");
+                    if (panelProp != null)
+                    {
+                        var panelObj = panelProp.GetValue(parentCtrl, null) as Control;
+                        if (panelObj != null)
+                        {
+                            panelObj.Controls.Add(childCtrl);
+                            return;
+                        }
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    var panel1Prop = parentCtrl.GetType().GetProperty("Panel1");
+                    if (panel1Prop != null)
+                    {
+                        var panel1Obj = panel1Prop.GetValue(parentCtrl, null) as Control;
+                        if (panel1Obj != null)
+                        {
+                            panel1Obj.Controls.Add(childCtrl);
+                            return;
+                        }
+                    }
+                }
+                catch { }
+            }
+        }
+
+        public static DataTable ExecuteSelectQuery(string sql)
+        {
+            try
+            {
+                string connStr = GetConnectionString();
+                using (FbConnection conn = new FbConnection(connStr))
+                {
+                    conn.Open();
+                    using (FbDataAdapter da = new FbDataAdapter(sql, conn))
+                    {
+                        DataTable dt = new DataTable();
+                        da.Fill(dt);
+                        return dt;
+                    }
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static void PopulateDynamicGridRows(DataGridView dgv, string formTitle)
+        {
+            try
+            {
+                if (dgv == null) return;
+
+                if (dgv.Columns.Count == 0)
+                {
+                    DataTable dtCols = null;
+                    string tName = GetTableNameForForm(formTitle);
+                    if (string.IsNullOrEmpty(tName))
+                    {
+                        string tLower = formTitle != null ? formTitle.ToLower() : "";
+                        if (tLower.Contains("lương") || tLower.Contains("chấm công") || tLower.Contains("tạm ứng")) tName = "DNHANVIEN";
+                        else if (tLower.Contains("phòng") || tLower.Contains("bàn")) tName = "DBAN";
+                        else if (tLower.Contains("kho")) tName = "DKHOHANG";
+                        else if (tLower.Contains("máy in")) tName = "DKHUVUC";
+                    }
+
+                    if (!string.IsNullOrEmpty(tName))
+                    {
+                        dtCols = ExecuteSelectQuery($"SELECT FIRST 1 * FROM {tName}");
+                    }
+
+                    if (dtCols != null && dtCols.Columns.Count > 0)
+                    {
+                        foreach (DataColumn dc in dtCols.Columns)
+                        {
+                            dgv.Columns.Add(dc.ColumnName, dc.ColumnName);
+                        }
+                    }
+                }
+
+                if (dgv.Columns.Count == 0) return;
+
+                string titleLower = formTitle != null ? formTitle.ToLower() : "";
+                string dgvNameLower = dgv.Name != null ? dgv.Name.ToLower() : "";
+
+                bool isPhongOrBan = titleLower.Contains("phòng") || titleLower.Contains("bàn")
+                    || dgv.Columns.Contains("colPhong") || dgv.Columns.Contains("colBan");
+
+                if (isPhongOrBan)
+                {
+                    DataTable dtBan = ExecuteSelectQuery(@"
+                        SELECT B.ID, B.NAME AS PHONG, B.NAME AS BAN, K.NAME AS KHUVUC, 'Phòng thường' AS LOAIPHONG
+                        FROM DBAN B
+                        LEFT JOIN DKHUVUC K ON B.DKHUVUCID = K.ID
+                        ORDER BY K.NAME, B.NAME");
+
+                    if (dtBan != null && dtBan.Rows.Count > 0)
+                    {
+                        foreach (DataRow r in dtBan.Rows)
+                        {
+                            int rowIndex = dgv.Rows.Add();
+                            DataGridViewRow row = dgv.Rows[rowIndex];
+                            for (int i = 0; i < dgv.Columns.Count; i++)
+                            {
+                                var col = dgv.Columns[i];
+                                string colName = col.Name.ToLower();
+                                string dataProp = col.DataPropertyName != null ? col.DataPropertyName.ToLower() : "";
+
+                                if (colName.Contains("chon") || dataProp == "chon") row.Cells[i].Value = false;
+                                else if (colName.Contains("phong") || colName.Contains("ban") || dataProp == "phong" || dataProp == "ban") row.Cells[i].Value = r["PHONG"]?.ToString();
+                                else if (colName.Contains("khuvuc") || dataProp == "khuvuc") row.Cells[i].Value = r["KHUVUC"]?.ToString();
+                                else if (colName.Contains("loaiphong") || dataProp == "loaiphong") row.Cells[i].Value = r["LOAIPHONG"]?.ToString();
+                                else if (i == 1) row.Cells[i].Value = r["PHONG"]?.ToString();
+                                else if (i == 2) row.Cells[i].Value = r["KHUVUC"]?.ToString();
+                            }
+                        }
+                    }
+                    return;
+                }
+
+                bool isDvt = titleLower.Contains("đơn vị tính") || dgv.Columns.Contains("colDvt") || dgv.Columns.Contains("colDonViTinh");
+                if (isDvt)
+                {
+                    DataTable dtDvt = ExecuteSelectQuery("SELECT ID, NAME FROM DDONVITINH ORDER BY NAME");
+                    if (dtDvt != null && dtDvt.Rows.Count > 0)
+                    {
+                        foreach (DataRow r in dtDvt.Rows)
+                        {
+                            int rowIndex = dgv.Rows.Add();
+                            DataGridViewRow row = dgv.Rows[rowIndex];
+                            for (int i = 0; i < dgv.Columns.Count; i++)
+                            {
+                                var col = dgv.Columns[i];
+                                string colName = col.Name.ToLower();
+                                if (colName.Contains("chon")) row.Cells[i].Value = false;
+                                else if (colName.Contains("ten") || colName.Contains("dvt") || i == 1) row.Cells[i].Value = r["NAME"]?.ToString();
+                                else if (colName.Contains("ma") || i == 0) row.Cells[i].Value = r["ID"]?.ToString();
+                            }
+                        }
+                    }
+                    return;
+                }
+
+                bool isKhuVuc = (formTitle != null && (formTitle.IndexOf("khu vực", StringComparison.OrdinalIgnoreCase) >= 0 || formTitle.IndexOf("máy in", StringComparison.OrdinalIgnoreCase) >= 0))
+                    || dgv.Columns.Contains("colKhuVuc") || dgv.Columns.Contains("colMayIn");
+
+                if (isKhuVuc)
+                {
+                    DataTable dtKhuVuc = ExecuteSelectQuery("SELECT NAME, MAYIN FROM DKHUVUC ORDER BY NAME");
+                    if (dtKhuVuc != null && dtKhuVuc.Rows.Count > 0)
+                    {
+                        foreach (DataRow r in dtKhuVuc.Rows)
+                        {
+                            int rowIndex = dgv.Rows.Add();
+                            DataGridViewRow row = dgv.Rows[rowIndex];
+                            string nameVal = r["NAME"]?.ToString() ?? "";
+                            string mayInVal = r["MAYIN"]?.ToString();
+                            if (string.IsNullOrEmpty(mayInVal)) mayInVal = "(Mặc định hệ thống)";
+
+                            for (int i = 0; i < dgv.Columns.Count; i++)
+                            {
+                                var col = dgv.Columns[i];
+                                if (col.Name.Equals("colKhuVuc", StringComparison.OrdinalIgnoreCase) || col.HeaderText.IndexOf("Khu vực", StringComparison.OrdinalIgnoreCase) >= 0 || i == 0)
+                                {
+                                    row.Cells[i].Value = nameVal;
+                                }
+                                else if (col.Name.Equals("colMayIn", StringComparison.OrdinalIgnoreCase) || col.HeaderText.IndexOf("Máy in", StringComparison.OrdinalIgnoreCase) >= 0 || i == 1)
+                                {
+                                    if (col is DataGridViewComboBoxColumn comboCol && !comboCol.Items.Contains(mayInVal))
+                                    {
+                                        comboCol.Items.Add(mayInVal);
+                                    }
+                                    row.Cells[i].Value = mayInVal;
+                                }
+                            }
+                        }
+                    }
+                    return;
+                }
+
+                bool isKhuyenMai = (formTitle != null && formTitle.IndexOf("khuyến mại", StringComparison.OrdinalIgnoreCase) >= 0)
+                    || dgv.Columns.Contains("colMa") || dgv.Columns.Contains("colTen");
+
+                if (isKhuyenMai)
+                {
+                    DataTable dtKM = ExecuteSelectQuery("SELECT ID, NAME, TUNGAY, DENNGAY FROM DDOTKHUYENMAI");
+                    if (dtKM != null && dtKM.Rows.Count > 0)
+                    {
+                        foreach (DataRow r in dtKM.Rows)
+                        {
+                            int rowIndex = dgv.Rows.Add();
+                            DataGridViewRow row = dgv.Rows[rowIndex];
+                            for (int i = 0; i < dgv.Columns.Count; i++)
+                            {
+                                var col = dgv.Columns[i];
+                                if (col.Name.Equals("colMa", StringComparison.OrdinalIgnoreCase) || i == 0) row.Cells[i].Value = r["ID"]?.ToString();
+                                else if (col.Name.Equals("colTen", StringComparison.OrdinalIgnoreCase) || i == 1) row.Cells[i].Value = r["NAME"]?.ToString();
+                                else if (col.Name.Equals("colTuNgay", StringComparison.OrdinalIgnoreCase) || i == 2) row.Cells[i].Value = r["TUNGAY"] != DBNull.Value ? Convert.ToDateTime(r["TUNGAY"]).ToString("dd/MM/yyyy") : "";
+                                else if (col.Name.Equals("colDenNgay", StringComparison.OrdinalIgnoreCase) || i == 3) row.Cells[i].Value = r["DENNGAY"] != DBNull.Value ? Convert.ToDateTime(r["DENNGAY"]).ToString("dd/MM/yyyy") : "";
+                            }
+                        }
+                    }
+                    return;
+                }
+
+                bool isTinhLuong = titleLower.Contains("lương") || titleLower.Contains("chấm công") || titleLower.Contains("bảng lương") || titleLower.Contains("tạm ứng");
+                if (isTinhLuong)
+                {
+                    DataTable dtLuong = ExecuteSelectQuery("SELECT FIRST 50 * FROM TBANGLUONG");
+                    if (dtLuong == null || dtLuong.Rows.Count == 0)
+                    {
+                        dtLuong = ExecuteSelectQuery("SELECT FIRST 50 ID, NAME, DIENTHOAI, EMAIL, SERI FROM DNHANVIEN");
+                    }
+
+                    if (dtLuong != null && dtLuong.Rows.Count > 0)
+                    {
+                        foreach (DataRow r in dtLuong.Rows)
+                        {
+                            int rowIndex = dgv.Rows.Add();
+                            DataGridViewRow row = dgv.Rows[rowIndex];
+                            for (int i = 0; i < dgv.Columns.Count; i++)
+                            {
+                                var col = dgv.Columns[i];
+                                string colName = col.Name.ToLower();
+                                string dataProp = !string.IsNullOrEmpty(col.DataPropertyName) ? col.DataPropertyName.ToLower() : "";
+
+                                if (colName.Contains("chon") || dataProp == "chon") row.Cells[i].Value = false;
+                                else if (dtLuong.Columns.Contains("NAME") && (colName.Contains("nhanvien") || colName.Contains("ten") || i == 1)) row.Cells[i].Value = r["NAME"]?.ToString();
+                                else if (dtLuong.Columns.Contains("ID") && (colName.Contains("ma") || i == 0)) row.Cells[i].Value = r["ID"]?.ToString();
+                                else
+                                {
+                                    foreach (DataColumn dc in dtLuong.Columns)
+                                    {
+                                        if (colName.Contains(dc.ColumnName.ToLower()) || dataProp.Contains(dc.ColumnName.ToLower()))
+                                        {
+                                            row.Cells[i].Value = r[dc.ColumnName]?.ToString();
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return;
+                }
+
+                // Generic table data loader based on form title or primary column names
+                string tableName = GetTableNameForForm(formTitle);
+                if (!string.IsNullOrEmpty(tableName))
+                {
+                    DataTable dtData = ExecuteSelectQuery($"SELECT FIRST 50 * FROM {tableName}");
+                    if (dtData != null && dtData.Rows.Count > 0)
+                    {
+                        foreach (DataRow r in dtData.Rows)
+                        {
+                            int rowIndex = dgv.Rows.Add();
+                            DataGridViewRow row = dgv.Rows[rowIndex];
+                            for (int i = 0; i < dgv.Columns.Count; i++)
+                            {
+                                var col = dgv.Columns[i];
+                                string prop = !string.IsNullOrEmpty(col.DataPropertyName) ? col.DataPropertyName : col.Name;
+                                if (col is DataGridViewCheckBoxColumn)
+                                {
+                                    row.Cells[i].Value = false;
+                                }
+                                else if (!string.IsNullOrEmpty(prop) && dtData.Columns.Contains(prop) && r[prop] != DBNull.Value)
+                                {
+                                    row.Cells[i].Value = r[prop]?.ToString();
+                                }
+                                else if (i < dtData.Columns.Count && r[i] != DBNull.Value)
+                                {
+                                    row.Cells[i].Value = r[i]?.ToString();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("PopulateDynamicGridRows error: " + ex.Message);
+            }
+        }
+
+        private static readonly Dictionary<string, Type> ControlTypeCache = new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
+
+        public static Type ResolveControlType(string typeName)
+        {
+            if (string.IsNullOrEmpty(typeName)) return null;
+
+            lock (ControlTypeCache)
+            {
+                if (ControlTypeCache.TryGetValue(typeName, out Type cached)) return cached;
+
+                Type t = Type.GetType(typeName, false, true);
+                if (t == null)
+                {
+                    string cleanTypeName = typeName.Split(',')[0].Trim();
+                    foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+                    {
+                        try
+                        {
+                            t = asm.GetType(cleanTypeName, false, true);
+                            if (t != null) break;
+                        }
+                        catch { }
+                    }
+
+                    if (t == null)
+                    {
+                        string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                        List<string> dirsToSearch = new List<string> { baseDir, Path.Combine(baseDir, "Libs") };
+                        DirectoryInfo parent = Directory.GetParent(baseDir);
+                        if (parent != null)
+                        {
+                            dirsToSearch.Add(parent.FullName);
+                            dirsToSearch.Add(Path.Combine(parent.FullName, "Libs"));
+                        }
+
+                        foreach (string dir in dirsToSearch)
+                        {
+                            if (Directory.Exists(dir))
+                            {
+                                foreach (string dll in Directory.GetFiles(dir, "*.dll"))
+                                {
+                                    try
+                                    {
+                                        Assembly asm = Assembly.LoadFrom(dll);
+                                        t = asm.GetType(cleanTypeName, false, true);
+                                        if (t != null) break;
+                                    }
+                                    catch { }
+                                }
+                            }
+                            if (t != null) break;
+                        }
+                    }
+                }
+
+                if (t != null) ControlTypeCache[typeName] = t;
+                return t;
+            }
+        }
+
+        public static DataGridView GetInnerDataGridView(Control c)
+        {
+            if (c is DataGridView dgv) return dgv;
+            if (c != null)
+            {
+                foreach (Control child in c.Controls)
+                {
+                    if (child is DataGridView childDgv) return childDgv;
+                    var sub = GetInnerDataGridView(child);
+                    if (sub != null) return sub;
+                }
+            }
+            return null;
+        }
+
         private static Control CreateControlFromType(string typeName, string name)
         {
+            if (!string.IsNullOrEmpty(typeName))
+            {
+                Type targetType = ResolveControlType(typeName);
+                if (targetType != null && typeof(Control).IsAssignableFrom(targetType))
+                {
+                    try
+                    {
+                        Control c = (Control)Activator.CreateInstance(targetType);
+                        c.Name = name;
+                        if (c is Form f)
+                        {
+                            f.TopLevel = false;
+                        }
+                        return c;
+                    }
+                    catch { }
+                }
+            }
+
             if (string.IsNullOrEmpty(typeName)) typeName = "";
             string lowerType = typeName.ToLower();
 
@@ -1904,11 +2667,11 @@ namespace QuanLyNhaHang.Services
             {
                 ctrl = new TreeView { Dock = DockStyle.Fill, Font = new Font("Segoe UI", 9F), ShowLines = true, ShowPlusMinus = true };
             }
-            else if (lowerType.Contains("datagrid") || lowerType.Contains("grid"))
+            else if (lowerType.Contains("datagrid") || lowerType.Contains("grid") || lowerType.Contains("search"))
             {
                 DataGridView dgv = new DataGridView
                 {
-                    Dock = DockStyle.Fill,
+                    Dock = DockStyle.None,
                     BackgroundColor = Color.White,
                     AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
                     AllowUserToAddRows = false
@@ -2082,6 +2845,49 @@ namespace QuanLyNhaHang.Services
             }
         }
 
+        private static void ApplyColumnXmlProperties(DataGridViewColumn col, XmlNode node)
+        {
+            if (col == null || node == null) return;
+            XmlNodeList propNodes = node.SelectNodes("./Property | .//Property");
+            if (propNodes == null) return;
+
+            foreach (XmlNode pNode in propNodes)
+            {
+                string pName = pNode.Attributes["name"]?.Value;
+                string pVal = pNode.InnerText?.Trim();
+                if (string.IsNullOrEmpty(pName) || string.IsNullOrEmpty(pVal)) continue;
+
+                try
+                {
+                    if (pName.Equals("HeaderText", StringComparison.OrdinalIgnoreCase))
+                    {
+                        col.HeaderText = pVal;
+                    }
+                    else if (pName.Equals("DataPropertyName", StringComparison.OrdinalIgnoreCase))
+                    {
+                        col.DataPropertyName = pVal;
+                    }
+                    else if (pName.Equals("Width", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (int.TryParse(pVal, out int w) && w > 0) col.Width = w;
+                    }
+                    else if (pName.Equals("Visible", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (bool.TryParse(pVal, out bool vis)) col.Visible = vis;
+                    }
+                    else if (pName.Equals("ReadOnly", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (bool.TryParse(pVal, out bool ro)) col.ReadOnly = ro;
+                    }
+                    else if (pName.Equals("FillWeight", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (float.TryParse(pVal, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out float fw) && fw > 0) col.FillWeight = fw;
+                    }
+                }
+                catch { }
+            }
+        }
+
         private static Image ParseBase64Image(string base64Str)
         {
             if (string.IsNullOrEmpty(base64Str)) return null;
@@ -2096,6 +2902,55 @@ namespace QuanLyNhaHang.Services
             catch
             {
                 return null;
+            }
+        }
+
+        private static void ApplyToolStripItemXmlProperties(ToolStripItem item, XmlNode node)
+        {
+            if (item == null || node == null) return;
+            XmlNodeList propNodes = node.SelectNodes("./Property | .//Property");
+            if (propNodes == null) return;
+
+            foreach (XmlNode pNode in propNodes)
+            {
+                string pName = pNode.Attributes["name"]?.Value;
+                string pVal = pNode.InnerText?.Trim();
+                if (string.IsNullOrEmpty(pName) || string.IsNullOrEmpty(pVal)) continue;
+
+                try
+                {
+                    if (pName.Equals("Text", StringComparison.OrdinalIgnoreCase))
+                    {
+                        item.Text = pVal;
+                    }
+                    else if (pName.Equals("Image", StringComparison.OrdinalIgnoreCase) || pName.Equals("Icon", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Image img = ParseBase64Image(pVal);
+                        if (img != null) item.Image = img;
+                    }
+                    else if (pName.Equals("DisplayStyle", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (Enum.TryParse(pVal, true, out ToolStripItemDisplayStyle ds)) item.DisplayStyle = ds;
+                    }
+                    else if (pName.Equals("Visible", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (bool.TryParse(pVal, out bool vis)) item.Available = vis;
+                    }
+                    else if (pName.Equals("Enabled", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (bool.TryParse(pVal, out bool en)) item.Enabled = en;
+                    }
+                    else if (pName.Equals("ToolTipText", StringComparison.OrdinalIgnoreCase))
+                    {
+                        item.ToolTipText = pVal;
+                    }
+                    else if (pName.Equals("ImageTransparentColor", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Color c = ParseXmlColor(pVal);
+                        if (!c.IsEmpty) item.ImageTransparentColor = c;
+                    }
+                }
+                catch { }
             }
         }
 
@@ -2206,6 +3061,20 @@ namespace QuanLyNhaHang.Services
                     {
                         if (Enum.TryParse(pVal, true, out DockStyle ds)) ctrl.Dock = ds;
                     }
+                    else if (pName.Equals("Bar", StringComparison.OrdinalIgnoreCase) || pName.Equals("Bar.BarOrientation", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (ctrl is ComponentFactory.Krypton.Navigator.KryptonNavigator knav)
+                        {
+                            if (pVal.Equals("Left", StringComparison.OrdinalIgnoreCase))
+                                knav.Bar.BarOrientation = ComponentFactory.Krypton.Toolkit.VisualOrientation.Left;
+                            else if (pVal.Equals("Right", StringComparison.OrdinalIgnoreCase))
+                                knav.Bar.BarOrientation = ComponentFactory.Krypton.Toolkit.VisualOrientation.Right;
+                            else if (pVal.Equals("Top", StringComparison.OrdinalIgnoreCase))
+                                knav.Bar.BarOrientation = ComponentFactory.Krypton.Toolkit.VisualOrientation.Top;
+                            else if (pVal.Equals("Bottom", StringComparison.OrdinalIgnoreCase))
+                                knav.Bar.BarOrientation = ComponentFactory.Krypton.Toolkit.VisualOrientation.Bottom;
+                        }
+                    }
                     else if (pName.Equals("Size", StringComparison.OrdinalIgnoreCase) || pName.Equals("ClientSize", StringComparison.OrdinalIgnoreCase))
                     {
                         string[] parts = pVal.Split(',');
@@ -2224,20 +3093,47 @@ namespace QuanLyNhaHang.Services
                     }
                     else if (pName.Equals("SplitterDistance", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (int.TryParse(pVal, out int dist) && dist > 10)
+                        if (int.TryParse(pVal, out int dist) && dist > 5)
                         {
+                            ctrl.Tag = dist;
                             if (ctrl is SplitContainer sc)
                             {
-                                sc.Tag = dist;
                                 try { sc.SplitterDistance = dist; } catch { }
+                            }
+                            else if (ctrl is ComponentFactory.Krypton.Toolkit.KryptonSplitContainer ksc)
+                            {
+                                try { ksc.SplitterDistance = dist; } catch { }
+                            }
+                            else
+                            {
+                                PropertyInfo pi = ctrl.GetType().GetProperty("SplitterDistance");
+                                if (pi != null && pi.CanWrite)
+                                {
+                                    try { pi.SetValue(ctrl, dist, null); } catch { }
+                                }
                             }
                         }
                     }
                     else if (pName.Equals("Orientation", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (ctrl is SplitContainer sc && Enum.TryParse(pVal, true, out Orientation ori))
+                        if (Enum.TryParse(pVal, true, out Orientation ori))
                         {
-                            sc.Orientation = ori;
+                            if (ctrl is SplitContainer sc)
+                            {
+                                sc.Orientation = ori;
+                            }
+                            else if (ctrl is ComponentFactory.Krypton.Toolkit.KryptonSplitContainer ksc)
+                            {
+                                ksc.Orientation = ori;
+                            }
+                            else
+                            {
+                                PropertyInfo pi = ctrl.GetType().GetProperty("Orientation");
+                                if (pi != null && pi.CanWrite)
+                                {
+                                    try { pi.SetValue(ctrl, ori, null); } catch { }
+                                }
+                            }
                         }
                     }
                     else if (pName.Equals("Anchor", StringComparison.OrdinalIgnoreCase))
@@ -2255,7 +3151,31 @@ namespace QuanLyNhaHang.Services
                     }
                     else if (pName.Equals("Visible", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (bool.TryParse(pVal, out bool vis)) ctrl.Visible = vis;
+                        ctrl.Visible = true;
+                    }
+                    else
+                    {
+                        PropertyInfo pi = ctrl.GetType().GetProperty(pName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+                        if (pi != null && pi.CanWrite)
+                        {
+                            Type pType = pi.PropertyType;
+                            if (pType == typeof(bool) && bool.TryParse(pVal, out bool bVal))
+                            {
+                                pi.SetValue(ctrl, bVal, null);
+                            }
+                            else if (pType == typeof(int) && int.TryParse(pVal, out int iVal))
+                            {
+                                pi.SetValue(ctrl, iVal, null);
+                            }
+                            else if (pType == typeof(string))
+                            {
+                                pi.SetValue(ctrl, pVal, null);
+                            }
+                            else if (pType.IsEnum)
+                            {
+                                try { pi.SetValue(ctrl, Enum.Parse(pType, pVal, true), null); } catch { }
+                            }
+                        }
                     }
                 }
                 catch { }
