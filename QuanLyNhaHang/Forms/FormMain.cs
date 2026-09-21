@@ -7,7 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using FirebirdSql.Data.FirebirdClient;
 using QuanLyNhaHang.Services;
-
+using QuanLyNhaHang.Forms;
 namespace QuanLyNhaHang
 {
     public partial class FormMain : Form
@@ -235,7 +235,7 @@ namespace QuanLyNhaHang
                                             devItem.Image = GetIconForMenuItem("Công cụ nhà phát triển", null, null);
                                             rootMenu.DropDownItems.Add(devItem);
 
-                                            ToolStripMenuItem userPermItem = new ToolStripMenuItem("Người dùng và phân quyền", null, (s, e) => OpenFormByName("Tài khoản người dùng"));
+                                            ToolStripMenuItem userPermItem = new ToolStripMenuItem("Người dùng và phân quyền", null, (s, e) => { using(var f = new FormUserManagement()) f.ShowDialog(); });
                                             userPermItem.Image = GetIconForMenuItem("Người dùng và phân quyền", null, null);
 
                                              ToolStripMenuItem sysConfigItem = new ToolStripMenuItem("Cấu hình toàn hệ thống", null, (s, e) => OpenSystemConfigForm());
@@ -260,7 +260,13 @@ namespace QuanLyNhaHang
                                         else if (itemMap.TryGetValue(m.Id, out ToolStripMenuItem childMenu))
                                         {
                                             string formTitle = childMenu.Text;
-                                            childMenu.Click += (s, e) => OpenFormByName(formTitle);
+                                            childMenu.Click += (s, e) => {
+                                                if (formTitle == "Người dùng và phân quyền" || formTitle == "Tài khoản người dùng") {
+                                                    using (var f = new FormUserManagement()) f.ShowDialog();
+                                                } else {
+                                                    OpenFormByName(formTitle);
+                                                }
+                                            };
                                             parentMenu.DropDownItems.Add(childMenu);
                                         }
                                     }
