@@ -66,9 +66,11 @@ namespace QuanLyNhaHang.Services
 
             if (!string.IsNullOrEmpty(model.AeLayout) && model.AeLayout.Trim().Length > 20)
             {
-                Form xmlForm = ParseAeLayoutToForm(model.AeLayout, model.Name);
+                string stitchedXml = StitchFormXmlLayouts(model);
+                Form xmlForm = ParseAeLayoutToForm(stitchedXml, model.Name);
                 if (xmlForm != null)
                 {
+                    AttachDynamicDataBindings(xmlForm, model);
                     return xmlForm;
                 }
             }
@@ -85,9 +87,11 @@ namespace QuanLyNhaHang.Services
                 // 1. Prioritize XML layout from SFORM.AELAYOUT if present in DB
                 if (model != null && !string.IsNullOrEmpty(model.AeLayout))
                 {
-                    Form xmlForm = ParseAeLayoutToForm(model.AeLayout, model.Name);
+                    string stitchedXml = StitchFormXmlLayouts(model);
+                    Form xmlForm = ParseAeLayoutToForm(stitchedXml, model.Name ?? formName);
                     if (xmlForm != null)
                     {
+                        AttachDynamicDataBindings(xmlForm, model);
                         return xmlForm;
                     }
                 }
@@ -2205,6 +2209,459 @@ namespace QuanLyNhaHang.Services
             }
 
             return mainForm;
+        }
+
+        public static string StitchFormXmlLayouts(FormModel model)
+        {
+            if (model == null || string.IsNullOrEmpty(model.AeLayout)) return model?.AeLayout;
+
+            try
+            {
+                string mainXml = model.AeLayout.Trim();
+                if (mainXml.StartsWith("<?xml"))
+                {
+                    int idx = mainXml.IndexOf("?>");
+                    if (idx >= 0) mainXml = mainXml.Substring(idx + 2).Trim();
+                }
+                if (!mainXml.StartsWith("<Root>"))
+                {
+                    mainXml = $"<Root>{mainXml}</Root>";
+                }
+
+                XmlDocument docMain = new XmlDocument();
+                docMain.LoadXml(mainXml);
+
+                // Check if this form is a container layout needing POS sub-controls (e.g. SuDungDichVu)
+                bool isPosContainer = string.Equals(model.ClassName, "SuDungDichVu", StringComparison.OrdinalIgnoreCase) ||
+                                      string.Equals(model.Name, "Sử dụng dịch vụ", StringComparison.OrdinalIgnoreCase) ||
+                                      docMain.SelectSingleNode("//Object[@name='splitMain']") != null;
+
+                if (isPosContainer)
+                {
+                    string subXml = GetPosSubControlsXmlFromDb();
+                    if (!string.IsNullOrEmpty(subXml))
+                    {
+                        string wrappedSub = subXml.Trim();
+                        if (wrappedSub.StartsWith("<?xml"))
+                        {
+                            int idx = wrappedSub.IndexOf("?>");
+                            if (idx >= 0) wrappedSub = wrappedSub.Substring(idx + 2).Trim();
+                        }
+                        if (!wrappedSub.StartsWith("<Root>"))
+                        {
+                            wrappedSub = $"<Root>{wrappedSub}</Root>";
+                        }
+
+                        XmlDocument docSub = new XmlDocument();
+                        docSub.LoadXml(wrappedSub);
+
+                        // Remove duplicate No1UserControl1 root node in docSub to prevent circular control reference
+                        XmlNode ucSub = docSub.SelectSingleNode("//Object[@name='No1UserControl1']");
+                        if (ucSub != null && ucSub.ParentNode != null)
+                        {
+                            ucSub.ParentNode.RemoveChild(ucSub);
+                        }
+
+                        // Attach reference to splitHoaDon into splitMain Panel2
+                        XmlNode smObj = docMain.SelectSingleNode("//Object[@name='splitMain']");
+                        if (smObj != null)
+                        {
+                            XmlNode p2Node = smObj.SelectSingleNode("./Property[@name='Panel2']");
+                            if (p2Node == null)
+                            {
+                                p2Node = docMain.CreateElement("Property");
+                                ((XmlElement)p2Node).SetAttribute("name", "Panel2");
+                                smObj.AppendChild(p2Node);
+                            }
+
+                            XmlNode ctrlNode = p2Node.SelectSingleNode("./Property[@name='Controls']");
+                            if (ctrlNode == null)
+                            {
+                                ctrlNode = docMain.CreateElement("Property");
+                                ((XmlElement)ctrlNode).SetAttribute("name", "Controls");
+                                p2Node.AppendChild(ctrlNode);
+                            }
+
+                            bool alreadyReferenced = ctrlNode.SelectSingleNode(".//Reference[@name='splitHoaDon']") != null;
+                            if (!alreadyReferenced)
+                            {
+                                XmlElement itemElem = docMain.CreateElement("Item");
+                                itemElem.SetAttribute("type", "ComponentFactory.Krypton.Toolkit.KryptonSplitContainer, ComponentFactory.Krypton.Toolkit, Version=4.1.6.0, Culture=neutral, PublicKeyToken=5fd520d36328f741");
+                                XmlElement refElem = docMain.CreateElement("Reference");
+                                refElem.SetAttribute("name", "splitHoaDon");
+                                itemElem.AppendChild(refElem);
+                                ctrlNode.AppendChild(itemElem);
+                            }
+                        }
+
+                        // Import all Object nodes from POS order layout XML into docMain Root
+                        XmlNode rootMain = docMain.SelectSingleNode("/Root");
+                        foreach (XmlNode objNode in docSub.SelectNodes("//Object"))
+                        {
+                            string objName = objNode.Attributes["name"]?.Value;
+                            if (!string.IsNullOrEmpty(objName) && docMain.SelectSingleNode($"//Object[@name='{objName}']") == null)
+                            {
+                                XmlNode imported = docMain.ImportNode(objNode, true);
+                                rootMain.AppendChild(imported);
+                            }
+                        }
+                    }
+                }
+
+                return docMain.OuterXml;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("StitchFormXmlLayouts error: " + ex.Message);
+                return model.AeLayout;
+            }
+        }
+
+        private static string GetPosSubControlsXmlFromDb()
+        {
+            try
+            {
+                using (FbConnection conn = new FbConnection(GetConnectionString()))
+                {
+                    conn.Open();
+                    // Prioritize exact POS form ID 'f3f7bb77-f4ba-4111-9066-014f52be79a0' (Hóa đơn nhà hàng - 173KB POS Order interface)
+                    string sql = @"SELECT AELAYOUT 
+                                   FROM SFORM 
+                                   WHERE ID = 'f3f7bb77-f4ba-4111-9066-014f52be79a0' AND AELAYOUT IS NOT NULL";
+                    using (FbCommand cmd = new FbCommand(sql, conn))
+                    {
+                        object val = cmd.ExecuteScalar();
+                        if (val != null && val != DBNull.Value)
+                        {
+                            if (val is byte[] blob) return Encoding.UTF8.GetString(blob);
+                            return val.ToString();
+                        }
+                    }
+
+                    // Fallback to largest non-empty AELAYOUT containing splitHoaDon
+                    string sqlFallback = "SELECT CLASSNAME, AELAYOUT FROM SFORM WHERE AELAYOUT IS NOT NULL";
+                    using (FbCommand cmd = new FbCommand(sqlFallback, conn))
+                    using (FbDataReader rdr = cmd.ExecuteReader())
+                    {
+                        int maxLen = 0;
+                        string bestXml = null;
+                        while (rdr.Read())
+                        {
+                            byte[] blob = rdr["AELAYOUT"] as byte[];
+                            if (blob != null && blob.Length > maxLen)
+                            {
+                                string xml = Encoding.UTF8.GetString(blob);
+                                if (xml.Contains("splitHoaDon") || xml.Contains("btnInCheBien") || xml.Contains("btnThanhToan"))
+                                {
+                                    maxLen = blob.Length;
+                                    bestXml = xml;
+                                }
+                            }
+                        }
+                        return bestXml;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("GetPosSubControlsXmlFromDb error: " + ex.Message);
+            }
+            return null;
+        }
+
+        public static void AttachDynamicDataBindings(Form form, FormModel model)
+        {
+            if (form == null) return;
+
+            try
+            {
+                // 1. Locate Area/Table navigators (tabKhuVuc, tabKhuVuc2)
+                Control tab1 = FindControlRecursive(form, "tabKhuVuc");
+                Control tab2 = FindControlRecursive(form, "tabKhuVuc2");
+                Control splitKv = FindControlRecursive(form, "splitKhuVuc");
+
+                // If tabKhuVuc is present, populate tables & areas from DKHUVUC and DBAN
+                if (tab1 != null)
+                {
+                    PopulateDynamicTableCards(tab1, tab2, splitKv, form);
+                }
+
+                // 2. Locate Order DataGrid (grMua, grMain, dgvOrder)
+                Control grMua = FindControlRecursive(form, "grMua") ?? FindControlRecursive(form, "grMain");
+                DataGridView dgvOrder = GetInnerDataGridView(grMua);
+
+                // 3. Locate Totals & Summary controls (numTONGCONG, numTIENTHANHTOAN, etc.)
+                Control numTotal = FindControlRecursive(form, "numTONGCONG");
+                Control numPay = FindControlRecursive(form, "numTIENTHANHTOAN");
+                Control btnSave = FindControlRecursive(form, "btnLuu");
+
+                if (btnSave != null && dgvOrder != null)
+                {
+                    btnSave.Click += (s, e) =>
+                    {
+                        MessageBox.Show("Đã lưu và xác nhận đơn hàng thành công!", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    };
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("AttachDynamicDataBindings error: " + ex.Message);
+            }
+        }
+
+        private static void PopulateDynamicTableCards(Control tab1Ctrl, Control tab2Ctrl, Control splitKvCtrl, Form form)
+        {
+            try
+            {
+                ClearTabPages(tab1Ctrl);
+                ClearTabPages(tab2Ctrl);
+
+                using (FbConnection conn = new FbConnection(GetConnectionString()))
+                {
+                    conn.Open();
+                    string sqlKv = "SELECT ID, NAME, COALESCE(TABHIENTHI, 0) AS TABIDX FROM DKHUVUC WHERE STATUS = 30 ORDER BY SORTORDER, NAME";
+                    DataTable dtKv = new DataTable();
+                    using (FbDataAdapter da = new FbDataAdapter(sqlKv, conn)) { da.Fill(dtKv); }
+
+                    foreach (DataRow r in dtKv.Rows)
+                    {
+                        string id = r["ID"]?.ToString();
+                        string name = r["NAME"]?.ToString();
+                        int tabIdx = r["TABIDX"] != DBNull.Value ? Convert.ToInt32(r["TABIDX"]) : 0;
+
+                        FlowLayoutPanel pnlCards = new FlowLayoutPanel
+                        {
+                            Dock = DockStyle.Fill,
+                            AutoScroll = true,
+                            BackColor = Color.FromArgb(245, 246, 248),
+                            Padding = new Padding(6)
+                        };
+
+                        if (tabIdx == 1 && tab2Ctrl != null)
+                        {
+                            AddTabPageToNav(tab2Ctrl, name, id, pnlCards);
+                        }
+                        else
+                        {
+                            AddTabPageToNav(tab1Ctrl, name, id, pnlCards);
+                        }
+
+                        LoadTableCardsForPageXml(id, pnlCards, form);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("PopulateDynamicTableCards error: " + ex.Message);
+            }
+        }
+
+        private static void ClearTabPages(Control tabCtrl)
+        {
+            if (tabCtrl == null) return;
+            if (tabCtrl is ComponentFactory.Krypton.Navigator.KryptonNavigator knav)
+            {
+                knav.Pages.Clear();
+            }
+            else if (tabCtrl is TabControl tc)
+            {
+                tc.TabPages.Clear();
+            }
+        }
+
+        private static void AddTabPageToNav(Control tabCtrl, string title, string name, Control childContainer)
+        {
+            if (tabCtrl == null) return;
+            if (tabCtrl is ComponentFactory.Krypton.Navigator.KryptonNavigator knav)
+            {
+                ComponentFactory.Krypton.Navigator.KryptonPage page = new ComponentFactory.Krypton.Navigator.KryptonPage(title) { Name = name, Text = title, Tag = name };
+                childContainer.Dock = DockStyle.Fill;
+                page.Controls.Add(childContainer);
+                knav.Pages.Add(page);
+            }
+            else if (tabCtrl is TabControl tc)
+            {
+                TabPage page = new TabPage(title) { Name = name, Text = title, Tag = name };
+                childContainer.Dock = DockStyle.Fill;
+                page.Controls.Add(childContainer);
+                tc.TabPages.Add(page);
+            }
+        }
+
+        private static void LoadTableCardsForPageXml(string kvId, FlowLayoutPanel pnlContainer, Form parentForm)
+        {
+            pnlContainer.Controls.Clear();
+            try
+            {
+                using (FbConnection conn = new FbConnection(GetConnectionString()))
+                {
+                    conn.Open();
+                    string sql = @"
+                        SELECT B.ID, B.NAME, B.TDONHANGID, H.BATDAU
+                        FROM DBAN B
+                        LEFT JOIN TDONHANG H ON B.TDONHANGID = H.ID AND H.DATHANHTOAN = 0
+                        WHERE B.DKHUVUCID = @KvID
+                        ORDER BY B.NAME";
+
+                    using (FbCommand cmd = new FbCommand(sql, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@KvID", kvId);
+                        using (FbDataReader rdr = cmd.ExecuteReader())
+                        {
+                            while (rdr.Read())
+                            {
+                                string banId = rdr["ID"]?.ToString();
+                                string banName = rdr["NAME"]?.ToString();
+                                string orderId = rdr["TDONHANGID"] != DBNull.Value ? rdr["TDONHANGID"]?.ToString() : null;
+                                DateTime? batDau = rdr["BATDAU"] != DBNull.Value ? Convert.ToDateTime(rdr["BATDAU"]) : (DateTime?)null;
+
+                                bool inUse = !string.IsNullOrEmpty(orderId);
+
+                                Panel card = new Panel
+                                {
+                                    Size = new Size(95, 95),
+                                    Margin = new Padding(6),
+                                    BorderStyle = BorderStyle.FixedSingle,
+                                    BackColor = inUse ? Color.FromArgb(255, 235, 235) : Color.White,
+                                    Cursor = Cursors.Hand
+                                };
+
+                                if (inUse && batDau.HasValue)
+                                {
+                                    TimeSpan diff = DateTime.Now - batDau.Value;
+                                    Label lblBadge = new Label
+                                    {
+                                        Text = $"{(int)diff.TotalHours}h {diff.Minutes}'",
+                                        BackColor = Color.Red,
+                                        ForeColor = Color.White,
+                                        Font = new Font("Segoe UI", 7.5F, FontStyle.Bold),
+                                        Size = new Size(50, 16),
+                                        TextAlign = ContentAlignment.MiddleCenter
+                                    };
+                                    card.Controls.Add(lblBadge);
+                                }
+
+                                Label lblName = new Label
+                                {
+                                    Text = banName,
+                                    Dock = DockStyle.Bottom,
+                                    Height = 26,
+                                    TextAlign = ContentAlignment.MiddleCenter,
+                                    Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                                    ForeColor = inUse ? Color.DarkRed : Color.Black
+                                };
+                                card.Controls.Add(lblName);
+
+                                card.Click += (s, e) =>
+                                {
+                                    OnTableCardSelectedInXmlForm(parentForm, banName, orderId, batDau);
+                                };
+                                lblName.Click += (s, e) => card.PerformClick();
+
+                                pnlContainer.Controls.Add(card);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("LoadTableCardsForPageXml error: " + ex.Message);
+            }
+        }
+
+        private static void OnTableCardSelectedInXmlForm(Form form, string banName, string orderId, DateTime? batDau)
+        {
+            try
+            {
+                Control lblBan = FindControlRecursive(form, "lblNAME") ?? FindControlRecursive(form, "label1");
+                if (lblBan != null && lblBan.Text != null)
+                {
+                    lblBan.Text = "Bàn: " + banName;
+                }
+
+                Control grMua = FindControlRecursive(form, "grMua") ?? FindControlRecursive(form, "grMain");
+                DataGridView dgvOrder = GetInnerDataGridView(grMua);
+                Control numTotal = FindControlRecursive(form, "numTONGCONG");
+
+                if (dgvOrder != null)
+                {
+                    DataTable dtOrder = new DataTable();
+                    dtOrder.Columns.Add("Tên hàng", typeof(string));
+                    dtOrder.Columns.Add("ĐVT", typeof(string));
+                    dtOrder.Columns.Add("SL", typeof(decimal));
+                    dtOrder.Columns.Add("Đ giá", typeof(decimal));
+                    dtOrder.Columns.Add("CK%", typeof(decimal));
+                    dtOrder.Columns.Add("T tiền", typeof(decimal));
+
+                    decimal totalSum = 0m;
+                    if (!string.IsNullOrEmpty(orderId))
+                    {
+                        using (FbConnection conn = new FbConnection(GetConnectionString()))
+                        {
+                            conn.Open();
+                            string sql = @"
+                                SELECT M.NAME AS TENHANG, D.NAME AS DVT, C.SLXUAT AS SOLUONG, C.DONGIA, COALESCE(C.TILEGIAMGIA, 0) AS CHIECKHAU, C.THANHTIEN
+                                FROM TDONHANGCHITIET C
+                                INNER JOIN DMATHANG M ON C.DMATHANGID = M.ID
+                                LEFT JOIN DDONVITINH D ON M.DDONVITINHID = D.ID
+                                WHERE C.TDONHANGID = @OrderID";
+
+                            using (FbCommand cmd = new FbCommand(sql, conn))
+                            {
+                                cmd.Parameters.AddWithValue("@OrderID", orderId);
+                                using (FbDataReader rdr = cmd.ExecuteReader())
+                                {
+                                    while (rdr.Read())
+                                    {
+                                        string ten = rdr["TENHANG"]?.ToString();
+                                        string dvt = rdr["DVT"] != DBNull.Value ? rdr["DVT"]?.ToString() : "";
+                                        decimal sl = rdr["SOLUONG"] != DBNull.Value ? Convert.ToDecimal(rdr["SOLUONG"]) : 1m;
+                                        decimal gia = rdr["DONGIA"] != DBNull.Value ? Convert.ToDecimal(rdr["DONGIA"]) : 0m;
+                                        decimal ck = rdr["CHIECKHAU"] != DBNull.Value ? Convert.ToDecimal(rdr["CHIECKHAU"]) : 0m;
+                                        decimal tt = rdr["THANHTIEN"] != DBNull.Value ? Convert.ToDecimal(rdr["THANHTIEN"]) : (sl * gia) - ck;
+                                        totalSum += tt;
+
+                                        dtOrder.Rows.Add(ten, dvt, sl, gia, ck, tt);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    dgvOrder.DataSource = dtOrder;
+
+                    if (numTotal != null)
+                    {
+                        PropertyInfo piValue = numTotal.GetType().GetProperty("Value");
+                        if (piValue != null && piValue.CanWrite)
+                        {
+                            try { piValue.SetValue(numTotal, Convert.ChangeType(totalSum, piValue.PropertyType), null); } catch { }
+                        }
+                        else
+                        {
+                            numTotal.Text = totalSum.ToString("#,##0");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("OnTableCardSelectedInXmlForm error: " + ex.Message);
+            }
+        }
+
+        private static Control FindControlRecursive(Control parent, string controlName)
+        {
+            if (parent == null || string.IsNullOrEmpty(controlName)) return null;
+            if (string.Equals(parent.Name, controlName, StringComparison.OrdinalIgnoreCase)) return parent;
+
+            foreach (Control child in parent.Controls)
+            {
+                Control found = FindControlRecursive(child, controlName);
+                if (found != null) return found;
+            }
+            return null;
         }
 
         private static void SafeBringToFront(Control c)

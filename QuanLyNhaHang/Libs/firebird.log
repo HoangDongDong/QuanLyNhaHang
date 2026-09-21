@@ -1,0 +1,8 @@
+
+LAPTOP-6KP13OSJ	Sun Sep 20 17:03:52 2026
+	ib_util init failed, UDFs can't be used - looks like firebird misconfigured
+	
+	D:\QuanLyNhaHang\QuanLyNhaHang\Libs\bin/ib_util.dll library has not been found
+	D:\QuanLyNhaHang\QuanLyNhaHang\Libs\ib_util.dll library has not been found
+	ib_util.dll library has not been found
+

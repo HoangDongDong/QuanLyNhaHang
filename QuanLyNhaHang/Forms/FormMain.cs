@@ -234,6 +234,15 @@ namespace QuanLyNhaHang
                                             ToolStripMenuItem devItem = new ToolStripMenuItem("Công cụ nhà phát triển", null, (s, e) => OpenDevTools());
                                             devItem.Image = GetIconForMenuItem("Công cụ nhà phát triển", null, null);
                                             rootMenu.DropDownItems.Add(devItem);
+
+                                            ToolStripMenuItem userPermItem = new ToolStripMenuItem("Người dùng và phân quyền", null, (s, e) => OpenFormByName("Tài khoản người dùng"));
+                                            userPermItem.Image = GetIconForMenuItem("Người dùng và phân quyền", null, null);
+
+                                             ToolStripMenuItem sysConfigItem = new ToolStripMenuItem("Cấu hình toàn hệ thống", null, (s, e) => OpenSystemConfigForm());
+                                             sysConfigItem.Image = GetIconForMenuItem("Cấu hình toàn hệ thống", null, null);
+
+                                            rootMenu.DropDownItems.Add(userPermItem);
+                                            rootMenu.DropDownItems.Add(sysConfigItem);
                                             rootMenu.DropDownItems.Add(new ToolStripSeparator());
                                         }
 
@@ -649,14 +658,14 @@ namespace QuanLyNhaHang
 
                 string displayTitle = isServiceForm ? "Sử dụng dịch vụ" : formName;
 
-                // Check if tab is already open in tabMain
-                foreach (TabPage page in tabMain.TabPages)
+                // If tab is already open in tabMain, remove old tab so fresh stitched form is loaded
+                for (int i = tabMain.TabPages.Count - 1; i >= 0; i--)
                 {
+                    TabPage page = tabMain.TabPages[i];
                     if (string.Equals(page.Text, displayTitle, StringComparison.OrdinalIgnoreCase) ||
                         (page.Tag != null && string.Equals(page.Tag.ToString(), displayTitle, StringComparison.OrdinalIgnoreCase)))
                     {
-                        tabMain.SelectedTab = page;
-                        return;
+                        tabMain.TabPages.RemoveAt(i);
                     }
                 }
 
@@ -691,6 +700,14 @@ namespace QuanLyNhaHang
         {
             FormFirebirdForms devForm = new FormFirebirdForms();
             devForm.ShowDialog(this);
+        }
+
+        private void OpenSystemConfigForm()
+        {
+            using (FormSystemConfig cfgForm = new FormSystemConfig())
+            {
+                cfgForm.ShowDialog(this);
+            }
         }
     }
 }
