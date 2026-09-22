@@ -18,6 +18,7 @@ namespace QuanLyNhaHang.Forms
         private void InitializeComponent()
         {
             this.pnlBottom = new System.Windows.Forms.Panel();
+            this.lblNote = new System.Windows.Forms.Label();
             this.btnExit = new System.Windows.Forms.Button();
             this.splitContainerMain = new System.Windows.Forms.SplitContainer();
             this.splitContainerLeft = new System.Windows.Forms.SplitContainer();
@@ -30,7 +31,6 @@ namespace QuanLyNhaHang.Forms
             this.colSTT = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.colAccount = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.pnlNote = new System.Windows.Forms.Panel();
-            this.lblNote = new System.Windows.Forms.Label();
             this.tsUsers = new System.Windows.Forms.ToolStrip();
             this.btnUserAdd = new System.Windows.Forms.ToolStripButton();
             this.btnUserEdit = new System.Windows.Forms.ToolStripButton();
@@ -58,16 +58,27 @@ namespace QuanLyNhaHang.Forms
             this.pnlBottom.Controls.Add(this.btnExit);
             this.pnlBottom.Dock = System.Windows.Forms.DockStyle.Bottom;
             this.pnlBottom.Location = new System.Drawing.Point(0, 591);
-            this.pnlBottom.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.pnlBottom.Margin = new System.Windows.Forms.Padding(4);
             this.pnlBottom.Name = "pnlBottom";
             this.pnlBottom.Size = new System.Drawing.Size(1179, 55);
             this.pnlBottom.TabIndex = 0;
+            // 
+            // lblNote
+            // 
+            this.lblNote.AutoSize = true;
+            this.lblNote.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Italic, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.lblNote.Location = new System.Drawing.Point(13, 12);
+            this.lblNote.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
+            this.lblNote.Name = "lblNote";
+            this.lblNote.Size = new System.Drawing.Size(453, 17);
+            this.lblNote.TabIndex = 0;
+            this.lblNote.Text = "Chú ý: Tài khoản hệ thống Admin không được hiển thị trong danh sách";
             // 
             // btnExit
             // 
             this.btnExit.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.btnExit.Location = new System.Drawing.Point(1063, 12);
-            this.btnExit.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.btnExit.Margin = new System.Windows.Forms.Padding(4);
             this.btnExit.Name = "btnExit";
             this.btnExit.Size = new System.Drawing.Size(100, 31);
             this.btnExit.TabIndex = 0;
@@ -79,7 +90,7 @@ namespace QuanLyNhaHang.Forms
             // 
             this.splitContainerMain.Dock = System.Windows.Forms.DockStyle.Fill;
             this.splitContainerMain.Location = new System.Drawing.Point(0, 0);
-            this.splitContainerMain.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.splitContainerMain.Margin = new System.Windows.Forms.Padding(4);
             this.splitContainerMain.Name = "splitContainerMain";
             // 
             // splitContainerMain.Panel1
@@ -92,7 +103,7 @@ namespace QuanLyNhaHang.Forms
             this.splitContainerMain.Panel2.Controls.Add(this.pnlRight);
             this.splitContainerMain.Panel2.Padding = new System.Windows.Forms.Padding(0, 6, 7, 6);
             this.splitContainerMain.Size = new System.Drawing.Size(1179, 591);
-            this.splitContainerMain.SplitterDistance = 426;
+            this.splitContainerMain.SplitterDistance = 294;
             this.splitContainerMain.SplitterWidth = 5;
             this.splitContainerMain.TabIndex = 1;
             // 
@@ -100,7 +111,7 @@ namespace QuanLyNhaHang.Forms
             // 
             this.splitContainerLeft.Dock = System.Windows.Forms.DockStyle.Fill;
             this.splitContainerLeft.Location = new System.Drawing.Point(7, 6);
-            this.splitContainerLeft.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.splitContainerLeft.Margin = new System.Windows.Forms.Padding(4);
             this.splitContainerLeft.Name = "splitContainerLeft";
             this.splitContainerLeft.Orientation = System.Windows.Forms.Orientation.Horizontal;
             // 
@@ -114,7 +125,7 @@ namespace QuanLyNhaHang.Forms
             this.splitContainerLeft.Panel2.Controls.Add(this.dgvUsers);
             this.splitContainerLeft.Panel2.Controls.Add(this.pnlNote);
             this.splitContainerLeft.Panel2.Controls.Add(this.tsUsers);
-            this.splitContainerLeft.Size = new System.Drawing.Size(412, 579);
+            this.splitContainerLeft.Size = new System.Drawing.Size(280, 579);
             this.splitContainerLeft.SplitterDistance = 271;
             this.splitContainerLeft.SplitterWidth = 5;
             this.splitContainerLeft.TabIndex = 0;
@@ -123,9 +134,9 @@ namespace QuanLyNhaHang.Forms
             // 
             this.tvGroups.Dock = System.Windows.Forms.DockStyle.Fill;
             this.tvGroups.Location = new System.Drawing.Point(0, 27);
-            this.tvGroups.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.tvGroups.Margin = new System.Windows.Forms.Padding(4);
             this.tvGroups.Name = "tvGroups";
-            this.tvGroups.Size = new System.Drawing.Size(412, 244);
+            this.tvGroups.Size = new System.Drawing.Size(280, 244);
             this.tvGroups.TabIndex = 1;
             // 
             // tsGroups
@@ -137,7 +148,7 @@ namespace QuanLyNhaHang.Forms
             this.btnGroupDelete});
             this.tsGroups.Location = new System.Drawing.Point(0, 0);
             this.tsGroups.Name = "tsGroups";
-            this.tsGroups.Size = new System.Drawing.Size(412, 27);
+            this.tsGroups.Size = new System.Drawing.Size(280, 27);
             this.tsGroups.TabIndex = 0;
             this.tsGroups.Text = "toolStrip1";
             // 
@@ -173,13 +184,13 @@ namespace QuanLyNhaHang.Forms
             this.colAccount});
             this.dgvUsers.Dock = System.Windows.Forms.DockStyle.Fill;
             this.dgvUsers.Location = new System.Drawing.Point(0, 27);
-            this.dgvUsers.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.dgvUsers.Margin = new System.Windows.Forms.Padding(4);
             this.dgvUsers.Name = "dgvUsers";
             this.dgvUsers.ReadOnly = true;
             this.dgvUsers.RowHeadersVisible = false;
             this.dgvUsers.RowHeadersWidth = 51;
             this.dgvUsers.SelectionMode = System.Windows.Forms.DataGridViewSelectionMode.FullRowSelect;
-            this.dgvUsers.Size = new System.Drawing.Size(412, 266);
+            this.dgvUsers.Size = new System.Drawing.Size(280, 266);
             this.dgvUsers.TabIndex = 1;
             // 
             // colSTT
@@ -202,21 +213,10 @@ namespace QuanLyNhaHang.Forms
             // 
             this.pnlNote.Dock = System.Windows.Forms.DockStyle.Bottom;
             this.pnlNote.Location = new System.Drawing.Point(0, 293);
-            this.pnlNote.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.pnlNote.Margin = new System.Windows.Forms.Padding(4);
             this.pnlNote.Name = "pnlNote";
-            this.pnlNote.Size = new System.Drawing.Size(412, 10);
+            this.pnlNote.Size = new System.Drawing.Size(280, 10);
             this.pnlNote.TabIndex = 2;
-            // 
-            // lblNote
-            // 
-            this.lblNote.AutoSize = true;
-            this.lblNote.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Italic, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lblNote.Location = new System.Drawing.Point(13, 12);
-            this.lblNote.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
-            this.lblNote.Name = "lblNote";
-            this.lblNote.Size = new System.Drawing.Size(453, 17);
-            this.lblNote.TabIndex = 0;
-            this.lblNote.Text = "Chú ý: Tài khoản hệ thống Admin không được hiển thị trong danh sách";
             // 
             // tsUsers
             // 
@@ -227,7 +227,7 @@ namespace QuanLyNhaHang.Forms
             this.btnUserDelete});
             this.tsUsers.Location = new System.Drawing.Point(0, 0);
             this.tsUsers.Name = "tsUsers";
-            this.tsUsers.Size = new System.Drawing.Size(412, 27);
+            this.tsUsers.Size = new System.Drawing.Size(280, 27);
             this.tsUsers.TabIndex = 0;
             this.tsUsers.Text = "toolStrip2";
             // 
@@ -259,9 +259,9 @@ namespace QuanLyNhaHang.Forms
             this.pnlRight.Controls.Add(this.lblPermissionHint);
             this.pnlRight.Dock = System.Windows.Forms.DockStyle.Fill;
             this.pnlRight.Location = new System.Drawing.Point(0, 6);
-            this.pnlRight.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.pnlRight.Margin = new System.Windows.Forms.Padding(4);
             this.pnlRight.Name = "pnlRight";
-            this.pnlRight.Size = new System.Drawing.Size(741, 579);
+            this.pnlRight.Size = new System.Drawing.Size(873, 579);
             this.pnlRight.TabIndex = 0;
             // 
             // lblPermissionHint
@@ -273,7 +273,7 @@ namespace QuanLyNhaHang.Forms
             this.lblPermissionHint.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
             this.lblPermissionHint.Name = "lblPermissionHint";
             this.lblPermissionHint.Padding = new System.Windows.Forms.Padding(0, 25, 0, 0);
-            this.lblPermissionHint.Size = new System.Drawing.Size(739, 577);
+            this.lblPermissionHint.Size = new System.Drawing.Size(871, 577);
             this.lblPermissionHint.TabIndex = 0;
             this.lblPermissionHint.Text = "MỜI BẠN CHỌN NHÓM NGƯỜI DÙNG BÊN PHÍA TRÁI ĐỂ PHÂN QUYỀN";
             this.lblPermissionHint.TextAlign = System.Drawing.ContentAlignment.TopCenter;
@@ -285,7 +285,7 @@ namespace QuanLyNhaHang.Forms
             this.ClientSize = new System.Drawing.Size(1179, 646);
             this.Controls.Add(this.splitContainerMain);
             this.Controls.Add(this.pnlBottom);
-            this.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
+            this.Margin = new System.Windows.Forms.Padding(4);
             this.Name = "FormUserManagement";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "Quản lý tài khoản người sử dụng và phân quyền";

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Drawing;
@@ -78,6 +78,284 @@ namespace QuanLyNhaHang.Services
             return CreateFormByName(model.Name ?? model.Id);
         }
 
+                public static bool ShowDynamicDataEntryForm(string formName, string tableName, string idValue = null)
+        {
+            try
+            {
+                Form dynamicForm = CreateFormByName(formName);
+                if (dynamicForm == null) return false;
+
+                Form wrapper = new Form
+                {
+                    Text = dynamicForm.Text + (string.IsNullOrEmpty(idValue) ? " (Thêm)" : " (Sửa)"),
+                    Size = new Size(dynamicForm.Width + 20, dynamicForm.Height + 80),
+                    StartPosition = FormStartPosition.CenterParent,
+                    FormBorderStyle = FormBorderStyle.FixedDialog,
+                    MaximizeBox = false,
+                    MinimizeBox = false,
+                    BackColor = Color.White
+                };
+
+                dynamicForm.TopLevel = false;
+                dynamicForm.FormBorderStyle = FormBorderStyle.None;
+                dynamicForm.Dock = DockStyle.Fill;
+                dynamicForm.Visible = true;
+
+                Panel pnlBottom = new Panel { Dock = DockStyle.Bottom, Height = 45, BackColor = Color.WhiteSmoke };
+                Button btnSave = new Button { Text = "Lưu", Width = 100, Height = 30, Top = 8, Left = wrapper.Width - 240, BackColor = Color.MediumSeaGreen, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+                btnSave.FlatAppearance.BorderSize = 0;
+                Button btnCancel = new Button { Text = "Hủy", Width = 100, Height = 30, Top = 8, Left = wrapper.Width - 130, BackColor = Color.IndianRed, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+                btnCancel.FlatAppearance.BorderSize = 0;
+
+                pnlBottom.Controls.Add(btnSave);
+                pnlBottom.Controls.Add(btnCancel);
+
+                wrapper.Controls.Add(dynamicForm);
+                wrapper.Controls.Add(pnlBottom);
+
+                // Populate lookups
+                PopulateLookupEdits(dynamicForm);
+
+                // Load Data for Edit Mode
+                if (!string.IsNullOrEmpty(idValue))
+                {
+                    LoadDataToForm(dynamicForm, tableName, idValue);
+                }
+
+                btnSave.Click += (s, e) =>
+                {
+                    if (SaveDataFromForm(dynamicForm, tableName, idValue))
+                    {
+                        wrapper.DialogResult = DialogResult.OK;
+                        wrapper.Close();
+                    }
+                };
+
+                btnCancel.Click += (s, e) => { wrapper.DialogResult = DialogResult.Cancel; wrapper.Close(); };
+
+                return wrapper.ShowDialog() == DialogResult.OK;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Lỗi hiển thị form động: " + ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+        }
+
+        private static void PopulateLookupEdits(Control parent)
+        {
+            foreach (Control c in parent.Controls)
+            {
+                if (c.Name == "lueSGROUPUSERID")
+                {
+                    DataTable dt = new DataTable();
+                    using (FbConnection conn = new FbConnection(GetConnectionString()))
+                    {
+                        conn.Open();
+                        using (FbDataAdapter da = new FbDataAdapter("SELECT ID, NAME FROM SGROUPUSER", conn)) { da.Fill(dt); }
+                    }
+                    BindLookupEdit(c, dt, "NAME", "ID");
+                }
+                else if (c.Name == "lueDNHANVIENID")
+                {
+                    DataTable dt = new DataTable();
+                    using (FbConnection conn = new FbConnection(GetConnectionString()))
+                    {
+                        conn.Open();
+                        try {
+                            using (FbDataAdapter da = new FbDataAdapter("SELECT ID, NAME FROM DNHANVIEN", conn)) { da.Fill(dt); }
+                        } catch { } // Ignore if DNHANVIEN doesn't exist
+                    }
+                    BindLookupEdit(c, dt, "NAME", "ID");
+                }
+                
+                if (c.Controls.Count > 0)
+                {
+                    PopulateLookupEdits(c);
+                }
+            }
+        }
+
+        private static void BindLookupEdit(Control control, DataTable dt, string displayMember, string valueMember)
+        {
+            try {
+                var props = control.GetType().GetProperty("Properties");
+                if (props != null)
+                {
+                    var propsObj = props.GetValue(control);
+                    propsObj.GetType().GetProperty("DataSource")?.SetValue(propsObj, dt);
+                    propsObj.GetType().GetProperty("DisplayMember")?.SetValue(propsObj, displayMember);
+                    propsObj.GetType().GetProperty("ValueMember")?.SetValue(propsObj, valueMember);
+                }
+                else
+                {
+                    control.GetType().GetProperty("DataSource")?.SetValue(control, dt);
+                    control.GetType().GetProperty("DisplayMember")?.SetValue(control, displayMember);
+                    control.GetType().GetProperty("ValueMember")?.SetValue(control, valueMember);
+                }
+            } catch { }
+        }
+
+        private static void LoadDataToForm(Control form, string tableName, string idValue)
+        {
+            using (FbConnection conn = new FbConnection(GetConnectionString()))
+            {
+                conn.Open();
+                using (FbCommand cmd = new FbCommand($"SELECT * FROM {tableName} WHERE ID = @id", conn))
+                {
+                    cmd.Parameters.AddWithValue("@id", idValue);
+                    using (FbDataReader reader = cmd.ExecuteReader())
+                    {
+                        if (reader.Read())
+                        {
+                            PopulateControlsFromReader(form, reader);
+                        }
+                    }
+                }
+            }
+        }
+
+        private static void PopulateControlsFromReader(Control parent, FbDataReader reader)
+        {
+            foreach (Control c in parent.Controls)
+            {
+                if (c.Name.StartsWith("txt") || c.Name.StartsWith("lue") || c.Name.StartsWith("cbo") || c.Name.StartsWith("chk"))
+                {
+                    string colName = c.Name.Substring(3); // e.g. txtNAME -> NAME
+                    try {
+                        int ord = reader.GetOrdinal(colName);
+                        object val = reader.GetValue(ord);
+                        SetControlValue(c, val);
+                    } catch { /* Column might not exist */ }
+                }
+
+                if (c.Controls.Count > 0)
+                {
+                    PopulateControlsFromReader(c, reader);
+                }
+            }
+        }
+
+        private static bool SaveDataFromForm(Control form, string tableName, string idValue)
+        {
+            try
+            {
+                var data = new System.Collections.Generic.Dictionary<string, object>();
+                ExtractDataFromControls(form, data);
+
+                using (FbConnection conn = new FbConnection(GetConnectionString()))
+                {
+                    conn.Open();
+                    using (var trans = conn.BeginTransaction())
+                    {
+                        try {
+                            FbCommand cmd = new FbCommand();
+                            cmd.Connection = conn;
+                            cmd.Transaction = trans;
+
+                            if (string.IsNullOrEmpty(idValue))
+                            {
+                                // INSERT
+                                idValue = Guid.NewGuid().ToString();
+                                data["ID"] = idValue;
+                                // We might also want to set AUTOID but Firebird triggers usually handle it or we ignore it
+                                
+                                string cols = string.Join(", ", data.Keys);
+                                string paramNames = string.Join(", ", data.Keys.Select(k => "@" + k));
+                                cmd.CommandText = $"INSERT INTO {tableName} ({cols}) VALUES ({paramNames})";
+                            }
+                            else
+                            {
+                                // UPDATE
+                                var updateSets = data.Keys.Where(k => k != "ID").Select(k => $"{k} = @{k}");
+                                string setClause = string.Join(", ", updateSets);
+                                cmd.CommandText = $"UPDATE {tableName} SET {setClause} WHERE ID = @ID";
+                                data["ID"] = idValue; // Ensure ID is in params
+                            }
+
+                            foreach (var kvp in data)
+                            {
+                                cmd.Parameters.AddWithValue("@" + kvp.Key, kvp.Value ?? DBNull.Value);
+                            }
+
+                            cmd.ExecuteNonQuery();
+                            trans.Commit();
+                            return true;
+                        } catch {
+                            trans.Rollback();
+                            throw;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Lỗi lưu dữ liệu: " + ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+        }
+
+        private static void ExtractDataFromControls(Control parent, System.Collections.Generic.Dictionary<string, object> data)
+        {
+            foreach (Control c in parent.Controls)
+            {
+                if (c.Name.StartsWith("txt") || c.Name.StartsWith("lue") || c.Name.StartsWith("cbo") || c.Name.StartsWith("chk"))
+                {
+                    string colName = c.Name.Substring(3);
+                    data[colName] = GetControlValue(c);
+                }
+
+                if (c.Controls.Count > 0)
+                {
+                    ExtractDataFromControls(c, data);
+                }
+            }
+        }
+
+        private static object GetControlValue(Control c)
+        {
+            if (c.Name.StartsWith("lue") || c.Name.StartsWith("cbo"))
+            {
+                var editVal = c.GetType().GetProperty("EditValue")?.GetValue(c);
+                if (editVal != null) return editVal;
+                
+                var selectedVal = c.GetType().GetProperty("SelectedValue")?.GetValue(c);
+                return selectedVal;
+            }
+            else if (c.Name.StartsWith("chk"))
+            {
+                var chkVal = c.GetType().GetProperty("Checked")?.GetValue(c);
+                return chkVal != null ? ((bool)chkVal ? 1 : 0) : 0;
+            }
+            
+            // TextBoxes
+            return string.IsNullOrEmpty(c.Text) ? null : c.Text;
+        }
+
+        private static void SetControlValue(Control c, object value)
+        {
+            if (value == DBNull.Value || value == null) { c.Text = ""; return; }
+            
+            if (c.Name.StartsWith("lue") || c.Name.StartsWith("cbo"))
+            {
+                var editValProp = c.GetType().GetProperty("EditValue");
+                if (editValProp != null) { editValProp.SetValue(c, value); return; }
+                
+                var selValProp = c.GetType().GetProperty("SelectedValue");
+                if (selValProp != null) { selValProp.SetValue(c, value); return; }
+            }
+            else if (c.Name.StartsWith("chk"))
+            {
+                var chkProp = c.GetType().GetProperty("Checked");
+                if (chkProp != null)
+                {
+                    chkProp.SetValue(c, Convert.ToInt32(value) == 1);
+                    return;
+                }
+            }
+            c.Text = value.ToString();
+        }
+
         public static Form CreateFormByName(string formName)
         {
             try
@@ -97,37 +375,37 @@ namespace QuanLyNhaHang.Services
                 }
 
                 // 2. Specific Fallbacks if AELAYOUT is empty/NULL in DB
-                if (string.Equals(formName, "Sử dụng dịch vụ", StringComparison.OrdinalIgnoreCase) ||
+                if (string.Equals(formName, "Sá»­ dá»¥ng dá»‹ch vá»¥", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(formName, "SuDungDichVu", StringComparison.OrdinalIgnoreCase) ||
                     (model != null && string.Equals(model.ClassName, "SuDungDichVu", StringComparison.OrdinalIgnoreCase)))
                 {
                     return CreateDynamicSuDungDichVuForm(model);
                 }
 
-                if (string.Equals(formName, "Chuyển hoá đơn", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(formName, "Chuyển hóa đơn", StringComparison.OrdinalIgnoreCase) ||
+                if (string.Equals(formName, "Chuyá»ƒn hoÃ¡ Ä‘Æ¡n", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(formName, "Chuyá»ƒn hÃ³a Ä‘Æ¡n", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(formName, "ChuyenHoaDon", StringComparison.OrdinalIgnoreCase))
                 {
                     return CreateChuyenHoaDonForm();
                 }
 
-                if (string.Equals(formName, "Chọn máy in", StringComparison.OrdinalIgnoreCase) ||
+                if (string.Equals(formName, "Chá»n mÃ¡y in", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(formName, "ChonMayIn", StringComparison.OrdinalIgnoreCase))
                 {
                     return CreateChonMayInForm();
                 }
 
-                if (string.Equals(formName, "Chuyển bàn", StringComparison.OrdinalIgnoreCase) ||
+                if (string.Equals(formName, "Chuyá»ƒn bÃ n", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(formName, "ChuyenBan", StringComparison.OrdinalIgnoreCase))
                 {
                     return CreateChuyenBanForm();
                 }
 
-                if (string.Equals(formName, "Quản lý bán hàng", StringComparison.OrdinalIgnoreCase) ||
+                if (string.Equals(formName, "Quáº£n lÃ½ bÃ¡n hÃ ng", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(formName, "QuanLyBanHang", StringComparison.OrdinalIgnoreCase) ||
                     (!string.IsNullOrEmpty(formName) && (
-                        formName.IndexOf("bán hàng", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        formName.IndexOf("đặt hàng", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        formName.IndexOf("bÃ¡n hÃ ng", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        formName.IndexOf("Ä‘áº·t hÃ ng", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         formName.IndexOf("order", StringComparison.OrdinalIgnoreCase) >= 0
                     )) ||
                     (model != null && (
@@ -139,12 +417,12 @@ namespace QuanLyNhaHang.Services
                 }
 
                 // 3. Fallback based on FormType
-                if (model != null && model.FormType == 1) // Quản trị / Danh mục
+                if (model != null && model.FormType == 1) // Quáº£n trá»‹ / Danh má»¥c
                 {
                     return CreateDefaultDynamicDataForm(formName, model);
                 }
 
-                // Default Blank Form for Custom Form (6) or Thêm sửa (0)
+                // Default Blank Form for Custom Form (6) or ThÃªm sá»­a (0)
                 return new Form
                 {
                     Text = formName,
@@ -155,7 +433,7 @@ namespace QuanLyNhaHang.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Lỗi nạp form động [{formName}]: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Lá»—i náº¡p form Ä‘á»™ng [{formName}]: {ex.Message}");
                 return new Form
                 {
                     Text = formName,
@@ -262,7 +540,7 @@ namespace QuanLyNhaHang.Services
         {
             Form form = new Form
             {
-                Text = model != null && !string.IsNullOrEmpty(model.Name) ? model.Name : "Sử dụng dịch vụ",
+                Text = model != null && !string.IsNullOrEmpty(model.Name) ? model.Name : "Sá»­ dá»¥ng dá»‹ch vá»¥",
                 Size = new Size(1024, 545),
                 BackColor = System.Drawing.Color.White,
                 WindowState = FormWindowState.Normal
@@ -283,9 +561,9 @@ namespace QuanLyNhaHang.Services
             SplitContainer splitCenter = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 550 };
 
             Panel pnlOrderHeader = new Panel { Dock = DockStyle.Top, Height = 100, BackColor = System.Drawing.Color.FromArgb(240, 243, 248) };
-            Label lblActiveTable = new Label { Text = "Chưa chọn bàn", Font = new System.Drawing.Font("Segoe UI", 11F, System.Drawing.FontStyle.Bold), Location = new System.Drawing.Point(10, 10), AutoSize = true };
-            Label lblStartTime = new Label { Text = "Chưa bắt đầu", Font = new System.Drawing.Font("Segoe UI", 9F), ForeColor = System.Drawing.Color.Gray, Location = new System.Drawing.Point(120, 13), AutoSize = true };
-            Button btnStart = new Button { Text = "Bắt đầu", Location = new System.Drawing.Point(240, 8), Size = new System.Drawing.Size(75, 26), Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold) };
+            Label lblActiveTable = new Label { Text = "ChÆ°a chá»n bÃ n", Font = new System.Drawing.Font("Segoe UI", 11F, System.Drawing.FontStyle.Bold), Location = new System.Drawing.Point(10, 10), AutoSize = true };
+            Label lblStartTime = new Label { Text = "ChÆ°a báº¯t Ä‘áº§u", Font = new System.Drawing.Font("Segoe UI", 9F), ForeColor = System.Drawing.Color.Gray, Location = new System.Drawing.Point(120, 13), AutoSize = true };
+            Button btnStart = new Button { Text = "Báº¯t Ä‘áº§u", Location = new System.Drawing.Point(240, 8), Size = new System.Drawing.Size(75, 26), Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold) };
 
             pnlOrderHeader.Controls.Add(lblActiveTable);
             pnlOrderHeader.Controls.Add(lblStartTime);
@@ -301,19 +579,19 @@ namespace QuanLyNhaHang.Services
             };
 
             DataTable dtOrder = new DataTable();
-            dtOrder.Columns.Add("Tên hàng", typeof(string));
-            dtOrder.Columns.Add("ĐVT", typeof(string));
+            dtOrder.Columns.Add("TÃªn hÃ ng", typeof(string));
+            dtOrder.Columns.Add("ÄVT", typeof(string));
             dtOrder.Columns.Add("SL", typeof(decimal));
-            dtOrder.Columns.Add("Đ giá", typeof(decimal));
+            dtOrder.Columns.Add("Ä giÃ¡", typeof(decimal));
             dtOrder.Columns.Add("CK%", typeof(decimal));
-            dtOrder.Columns.Add("T tiền", typeof(decimal));
-            dtOrder.Columns.Add("Ghi chú", typeof(string));
+            dtOrder.Columns.Add("T tiá»n", typeof(decimal));
+            dtOrder.Columns.Add("Ghi chÃº", typeof(string));
             dgvOrder.DataSource = dtOrder;
 
             Panel pnlSummary = new Panel { Dock = DockStyle.Fill, BackColor = System.Drawing.Color.FromArgb(242, 244, 248) };
-            Label lblTotalText = new Label { Text = "Tổng cộng:", Font = new System.Drawing.Font("Segoe UI", 12F, System.Drawing.FontStyle.Bold), Location = new System.Drawing.Point(100, 60), AutoSize = true };
+            Label lblTotalText = new Label { Text = "Tá»•ng cá»™ng:", Font = new System.Drawing.Font("Segoe UI", 12F, System.Drawing.FontStyle.Bold), Location = new System.Drawing.Point(100, 60), AutoSize = true };
             Label lblTotalVal = new Label { Text = "0", Font = new System.Drawing.Font("Segoe UI", 18F, System.Drawing.FontStyle.Bold), ForeColor = System.Drawing.Color.Red, Location = new System.Drawing.Point(220, 55), AutoSize = true };
-            Button btnPay = new Button { Text = "Thanh toán (F11)", Anchor = AnchorStyles.Top | AnchorStyles.Right, Location = new System.Drawing.Point(480, 50), Size = new System.Drawing.Size(90, 40), Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold) };
+            Button btnPay = new Button { Text = "Thanh toÃ¡n (F11)", Anchor = AnchorStyles.Top | AnchorStyles.Right, Location = new System.Drawing.Point(480, 50), Size = new System.Drawing.Size(90, 40), Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold) };
 
             pnlSummary.Controls.Add(lblTotalText);
             pnlSummary.Controls.Add(lblTotalVal);
@@ -379,7 +657,7 @@ namespace QuanLyNhaHang.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine("Lỗi LoadDynamicKhuVucAndBan: " + ex.Message);
+                System.Diagnostics.Debug.WriteLine("Lá»—i LoadDynamicKhuVucAndBan: " + ex.Message);
             }
         }
 
@@ -434,7 +712,7 @@ namespace QuanLyNhaHang.Services
                                 card.Click += (s, e) =>
                                 {
                                     lblActiveTable.Text = banName;
-                                    lblStartTime.Text = batDau.HasValue ? batDau.Value.ToString("HH:mm dd/MM") : "Chưa bắt đầu";
+                                    lblStartTime.Text = batDau.HasValue ? batDau.Value.ToString("HH:mm dd/MM") : "ChÆ°a báº¯t Ä‘áº§u";
                                     btnStart.Enabled = !inUse;
                                     LoadOrderDetailsForTable(orderId, dtOrder, lblTotalVal);
                                 };
@@ -448,7 +726,7 @@ namespace QuanLyNhaHang.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine("Lỗi LoadTableCardsForPage: " + ex.Message);
+                System.Diagnostics.Debug.WriteLine("Lá»—i LoadTableCardsForPage: " + ex.Message);
             }
         }
 
@@ -506,7 +784,7 @@ namespace QuanLyNhaHang.Services
             try
             {
                 treeNhom.Nodes.Clear();
-                TreeNode root = new TreeNode("Tất cả") { Tag = "ALL" };
+                TreeNode root = new TreeNode("Táº¥t cáº£") { Tag = "ALL" };
                 treeNhom.Nodes.Add(root);
 
                 using (FbConnection conn = new FbConnection(GetConnectionString()))
@@ -536,10 +814,10 @@ namespace QuanLyNhaHang.Services
                     dgvFood.DataSource = dtFood;
                     if (dgvFood.Columns.Contains("ID")) dgvFood.Columns["ID"].Visible = false;
                     if (dgvFood.Columns.Contains("DNHOMMATHANGID")) dgvFood.Columns["DNHOMMATHANGID"].Visible = false;
-                    if (dgvFood.Columns.Contains("TENHANG")) dgvFood.Columns["TENHANG"].HeaderText = "Tên hàng";
-                    if (dgvFood.Columns.Contains("DVT")) dgvFood.Columns["DVT"].HeaderText = "ĐVT";
-                    if (dgvFood.Columns.Contains("GIABAN")) { dgvFood.Columns["GIABAN"].HeaderText = "Giá bán"; dgvFood.Columns["GIABAN"].DefaultCellStyle.Format = "#,##0"; }
-                    if (dgvFood.Columns.Contains("MAHANG")) dgvFood.Columns["MAHANG"].HeaderText = "Mã hàng";
+                    if (dgvFood.Columns.Contains("TENHANG")) dgvFood.Columns["TENHANG"].HeaderText = "TÃªn hÃ ng";
+                    if (dgvFood.Columns.Contains("DVT")) dgvFood.Columns["DVT"].HeaderText = "ÄVT";
+                    if (dgvFood.Columns.Contains("GIABAN")) { dgvFood.Columns["GIABAN"].HeaderText = "GiÃ¡ bÃ¡n"; dgvFood.Columns["GIABAN"].DefaultCellStyle.Format = "#,##0"; }
+                    if (dgvFood.Columns.Contains("MAHANG")) dgvFood.Columns["MAHANG"].HeaderText = "MÃ£ hÃ ng";
 
                     treeNhom.AfterSelect += (s, e) =>
                     {
@@ -555,7 +833,7 @@ namespace QuanLyNhaHang.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine("Lỗi LoadDynamicNhomAndThucDon: " + ex.Message);
+                System.Diagnostics.Debug.WriteLine("Lá»—i LoadDynamicNhomAndThucDon: " + ex.Message);
             }
         }
 
@@ -563,7 +841,7 @@ namespace QuanLyNhaHang.Services
         {
             Form form = new Form
             {
-                Text = model != null && !string.IsNullOrEmpty(model.Name) ? model.Name : "Quản lý bán hàng",
+                Text = model != null && !string.IsNullOrEmpty(model.Name) ? model.Name : "Quáº£n lÃ½ bÃ¡n hÃ ng",
                 Size = new Size(1024, 545),
                 BackColor = System.Drawing.Color.White,
                 WindowState = FormWindowState.Normal
@@ -573,11 +851,11 @@ namespace QuanLyNhaHang.Services
 
             // Left Invoices Panel
             Panel pnlLeftTop = new Panel { Dock = DockStyle.Top, Height = 40, BackColor = System.Drawing.Color.FromArgb(240, 243, 248) };
-            Label lblFrom = new Label { Text = "Từ:", Location = new System.Drawing.Point(10, 10), AutoSize = true };
+            Label lblFrom = new Label { Text = "Tá»«:", Location = new System.Drawing.Point(10, 10), AutoSize = true };
             DateTimePicker dtFrom = new DateTimePicker { Location = new System.Drawing.Point(40, 7), Format = DateTimePickerFormat.Short, Width = 100, Value = new DateTime(2016, 1, 1) };
-            Label lblTo = new Label { Text = "Đến:", Location = new System.Drawing.Point(150, 10), AutoSize = true };
+            Label lblTo = new Label { Text = "Äáº¿n:", Location = new System.Drawing.Point(150, 10), AutoSize = true };
             DateTimePicker dtTo = new DateTimePicker { Location = new System.Drawing.Point(185, 7), Format = DateTimePickerFormat.Short, Width = 100 };
-            Button btnReload = new Button { Text = "Tải dữ liệu", Location = new System.Drawing.Point(300, 6), Size = new System.Drawing.Size(90, 26) };
+            Button btnReload = new Button { Text = "Táº£i dá»¯ liá»‡u", Location = new System.Drawing.Point(300, 6), Size = new System.Drawing.Size(90, 26) };
 
             pnlLeftTop.Controls.Add(lblFrom);
             pnlLeftTop.Controls.Add(dtFrom);
@@ -599,8 +877,8 @@ namespace QuanLyNhaHang.Services
 
             // Right Invoice Details Panel
             Panel pnlRightHeader = new Panel { Dock = DockStyle.Top, Height = 90, BackColor = System.Drawing.Color.FromArgb(240, 243, 248) };
-            Label lblBanTitle = new Label { Text = "Bàn --", Font = new System.Drawing.Font("Segoe UI", 11F, System.Drawing.FontStyle.Bold), Location = new System.Drawing.Point(10, 10), AutoSize = true };
-            Label lblSoPhieu = new Label { Text = "Số phiếu:", Location = new System.Drawing.Point(10, 40), AutoSize = true };
+            Label lblBanTitle = new Label { Text = "BÃ n --", Font = new System.Drawing.Font("Segoe UI", 11F, System.Drawing.FontStyle.Bold), Location = new System.Drawing.Point(10, 10), AutoSize = true };
+            Label lblSoPhieu = new Label { Text = "Sá»‘ phiáº¿u:", Location = new System.Drawing.Point(10, 40), AutoSize = true };
             TextBox txtSoPhieu = new TextBox { Location = new System.Drawing.Point(80, 37), Width = 120, ReadOnly = true };
 
             pnlRightHeader.Controls.Add(lblBanTitle);
@@ -617,12 +895,12 @@ namespace QuanLyNhaHang.Services
             };
 
             DataTable dtDetails = new DataTable();
-            dtDetails.Columns.Add("Tên hàng", typeof(string));
-            dtDetails.Columns.Add("ĐVT", typeof(string));
+            dtDetails.Columns.Add("TÃªn hÃ ng", typeof(string));
+            dtDetails.Columns.Add("ÄVT", typeof(string));
             dtDetails.Columns.Add("SL", typeof(decimal));
-            dtDetails.Columns.Add("Đ giá", typeof(decimal));
+            dtDetails.Columns.Add("Ä giÃ¡", typeof(decimal));
             dtDetails.Columns.Add("CK%", typeof(decimal));
-            dtDetails.Columns.Add("T tiền", typeof(decimal));
+            dtDetails.Columns.Add("T tiá»n", typeof(decimal));
             dgvBillDetails.DataSource = dtDetails;
 
             Panel pnlRightMain = new Panel { Dock = DockStyle.Fill };
@@ -657,13 +935,13 @@ namespace QuanLyNhaHang.Services
 
                         dgvBills.DataSource = dtBills;
                         if (dgvBills.Columns.Contains("ID")) dgvBills.Columns["ID"].Visible = false;
-                        if (dgvBills.Columns.Contains("SOHD_VAL")) dgvBills.Columns["SOHD_VAL"].HeaderText = "Số phiếu";
+                        if (dgvBills.Columns.Contains("SOHD_VAL")) dgvBills.Columns["SOHD_VAL"].HeaderText = "Sá»‘ phiáº¿u";
                         if (dgvBills.Columns.Contains("SOHD_TEXT")) dgvBills.Columns["SOHD_TEXT"].Visible = false;
-                        if (dgvBills.Columns.Contains("NGAY")) dgvBills.Columns["NGAY"].HeaderText = "Ngày";
-                        if (dgvBills.Columns.Contains("BAN_NAME")) dgvBills.Columns["BAN_NAME"].HeaderText = "Bàn";
-                        if (dgvBills.Columns.Contains("BATDAU")) dgvBills.Columns["BATDAU"].HeaderText = "Bắt đầu";
-                        if (dgvBills.Columns.Contains("KETTHUC")) dgvBills.Columns["KETTHUC"].HeaderText = "Kết thúc";
-                        if (dgvBills.Columns.Contains("TONGCONG")) { dgvBills.Columns["TONGCONG"].HeaderText = "Tổng cộng"; dgvBills.Columns["TONGCONG"].DefaultCellStyle.Format = "#,##0"; }
+                        if (dgvBills.Columns.Contains("NGAY")) dgvBills.Columns["NGAY"].HeaderText = "NgÃ y";
+                        if (dgvBills.Columns.Contains("BAN_NAME")) dgvBills.Columns["BAN_NAME"].HeaderText = "BÃ n";
+                        if (dgvBills.Columns.Contains("BATDAU")) dgvBills.Columns["BATDAU"].HeaderText = "Báº¯t Ä‘áº§u";
+                        if (dgvBills.Columns.Contains("KETTHUC")) dgvBills.Columns["KETTHUC"].HeaderText = "Káº¿t thÃºc";
+                        if (dgvBills.Columns.Contains("TONGCONG")) { dgvBills.Columns["TONGCONG"].HeaderText = "Tá»•ng cá»™ng"; dgvBills.Columns["TONGCONG"].DefaultCellStyle.Format = "#,##0"; }
                     }
                 }
                 catch { }
@@ -677,7 +955,7 @@ namespace QuanLyNhaHang.Services
                 if (dgvBills.CurrentRow != null && dgvBills.CurrentRow.DataBoundItem is DataRowView drv)
                 {
                     string orderId = drv["ID"]?.ToString();
-                    lblBanTitle.Text = drv["BAN_NAME"] != DBNull.Value ? drv["BAN_NAME"]?.ToString() : "Bàn --";
+                    lblBanTitle.Text = drv["BAN_NAME"] != DBNull.Value ? drv["BAN_NAME"]?.ToString() : "BÃ n --";
                     txtSoPhieu.Text = drv["SOHD_VAL"] != DBNull.Value ? drv["SOHD_VAL"]?.ToString() : "";
 
                     LoadOrderDetailsForTable(orderId, dtDetails, new Label());
@@ -691,32 +969,32 @@ namespace QuanLyNhaHang.Services
         {
             Form f = new Form
             {
-                Text = "Chuyển hóa đơn",
+                Text = "Chuyá»ƒn hÃ³a Ä‘Æ¡n",
                 Size = new Size(620, 420),
                 StartPosition = FormStartPosition.CenterParent,
                 BackColor = Color.FromArgb(245, 247, 250)
             };
 
             Panel pnlTop = new Panel { Dock = DockStyle.Top, Height = 80, BackColor = Color.FromArgb(235, 240, 248), Padding = new Padding(10) };
-            Label lblSource = new Label { Text = "Hóa đơn nguồn:", Location = new Point(12, 16), AutoSize = true, Font = new Font("Segoe UI", 9F, FontStyle.Bold) };
+            Label lblSource = new Label { Text = "HÃ³a Ä‘Æ¡n nguá»“n:", Location = new Point(12, 16), AutoSize = true, Font = new Font("Segoe UI", 9F, FontStyle.Bold) };
             ComboBox cboSource = new ComboBox { Location = new Point(120, 13), Width = 180, DropDownStyle = ComboBoxStyle.DropDownList };
             
-            Label lblTarget = new Label { Text = "Chuyển sang bàn:", Location = new Point(315, 16), AutoSize = true, Font = new Font("Segoe UI", 9F, FontStyle.Bold) };
+            Label lblTarget = new Label { Text = "Chuyá»ƒn sang bÃ n:", Location = new Point(315, 16), AutoSize = true, Font = new Font("Segoe UI", 9F, FontStyle.Bold) };
             ComboBox cboTarget = new ComboBox { Location = new Point(430, 13), Width = 160, DropDownStyle = ComboBoxStyle.DropDownList };
 
-            Button btnExecute = new Button { Text = "🔄 Thực hiện chuyển hóa đơn", Location = new Point(120, 45), Size = new Size(200, 28), Font = new Font("Segoe UI", 9F, FontStyle.Bold), BackColor = Color.FromArgb(40, 120, 200), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
-            Button btnCancel = new Button { Text = "❌ Hủy bỏ", Location = new Point(330, 45), Size = new Size(100, 28), Font = new Font("Segoe UI", 9F) };
+            Button btnExecute = new Button { Text = "ðŸ”„ Thá»±c hiá»‡n chuyá»ƒn hÃ³a Ä‘Æ¡n", Location = new Point(120, 45), Size = new Size(200, 28), Font = new Font("Segoe UI", 9F, FontStyle.Bold), BackColor = Color.FromArgb(40, 120, 200), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+            Button btnCancel = new Button { Text = "âŒ Há»§y bá»", Location = new Point(330, 45), Size = new Size(100, 28), Font = new Font("Segoe UI", 9F) };
 
             pnlTop.Controls.AddRange(new Control[] { lblSource, cboSource, lblTarget, cboTarget, btnExecute, btnCancel });
 
             DataGridView dgv = new DataGridView { Dock = DockStyle.Fill, BackgroundColor = Color.White, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, ReadOnly = true, AllowUserToAddRows = false };
             DataTable dt = new DataTable();
-            dt.Columns.Add("Mã món", typeof(string));
-            dt.Columns.Add("Tên mặt hàng", typeof(string));
-            dt.Columns.Add("ĐVT", typeof(string));
-            dt.Columns.Add("Số lượng", typeof(decimal));
-            dt.Columns.Add("Đơn giá", typeof(decimal));
-            dt.Columns.Add("Thành tiền", typeof(decimal));
+            dt.Columns.Add("MÃ£ mÃ³n", typeof(string));
+            dt.Columns.Add("TÃªn máº·t hÃ ng", typeof(string));
+            dt.Columns.Add("ÄVT", typeof(string));
+            dt.Columns.Add("Sá»‘ lÆ°á»£ng", typeof(decimal));
+            dt.Columns.Add("ÄÆ¡n giÃ¡", typeof(decimal));
+            dt.Columns.Add("ThÃ nh tiá»n", typeof(decimal));
             dgv.DataSource = dt;
 
             f.Controls.Add(dgv);
@@ -728,33 +1006,33 @@ namespace QuanLyNhaHang.Services
         {
             Form f = new Form
             {
-                Text = "Chọn máy in",
+                Text = "Chá»n mÃ¡y in",
                 Size = new Size(520, 320),
                 StartPosition = FormStartPosition.CenterParent,
                 BackColor = Color.White
             };
 
             Panel pnlMain = new Panel { Dock = DockStyle.Fill, Padding = new Padding(20) };
-            Label lblHeader = new Label { Text = "CẤU HÌNH MÁY IN HỆ THỐNG", Font = new Font("Segoe UI", 11F, FontStyle.Bold), ForeColor = Color.FromArgb(0, 50, 120), Location = new Point(20, 15), AutoSize = true };
+            Label lblHeader = new Label { Text = "Cáº¤U HÃŒNH MÃY IN Há»† THá»NG", Font = new Font("Segoe UI", 11F, FontStyle.Bold), ForeColor = Color.FromArgb(0, 50, 120), Location = new Point(20, 15), AutoSize = true };
 
-            Label lblReceipt = new Label { Text = "Máy in hóa đơn (Bill Printer):", Location = new Point(20, 55), AutoSize = true, Font = new Font("Segoe UI", 9F) };
+            Label lblReceipt = new Label { Text = "MÃ¡y in hÃ³a Ä‘Æ¡n (Bill Printer):", Location = new Point(20, 55), AutoSize = true, Font = new Font("Segoe UI", 9F) };
             ComboBox cboReceipt = new ComboBox { Location = new Point(210, 52), Width = 260, DropDownStyle = ComboBoxStyle.DropDownList };
             cboReceipt.Items.AddRange(new object[] { "Default Printer", "POS-80 Series", "Xprinter XP-N160I", "Microsoft Print to PDF" });
             cboReceipt.SelectedIndex = 0;
 
-            Label lblKitchen = new Label { Text = "Máy in bếp / chế biến:", Location = new Point(20, 95), AutoSize = true, Font = new Font("Segoe UI", 9F) };
+            Label lblKitchen = new Label { Text = "MÃ¡y in báº¿p / cháº¿ biáº¿n:", Location = new Point(20, 95), AutoSize = true, Font = new Font("Segoe UI", 9F) };
             ComboBox cboKitchen = new ComboBox { Location = new Point(210, 92), Width = 260, DropDownStyle = ComboBoxStyle.DropDownList };
-            cboKitchen.Items.AddRange(new object[] { "(Không sử dụng)", "Kitchen Printer 1", "POS-80 Series" });
+            cboKitchen.Items.AddRange(new object[] { "(KhÃ´ng sá»­ dá»¥ng)", "Kitchen Printer 1", "POS-80 Series" });
             cboKitchen.SelectedIndex = 0;
 
-            Label lblCopies = new Label { Text = "Số liên in hóa đơn:", Location = new Point(20, 135), AutoSize = true, Font = new Font("Segoe UI", 9F) };
+            Label lblCopies = new Label { Text = "Sá»‘ liÃªn in hÃ³a Ä‘Æ¡n:", Location = new Point(20, 135), AutoSize = true, Font = new Font("Segoe UI", 9F) };
             NumericUpDown numCopies = new NumericUpDown { Location = new Point(210, 132), Width = 80, Value = 1, Minimum = 1, Maximum = 10 };
 
-            CheckBox chkAuto = new CheckBox { Text = "Tự động in sau khi xác nhận thanh toán", Location = new Point(210, 168), AutoSize = true, Checked = true, Font = new Font("Segoe UI", 9F) };
+            CheckBox chkAuto = new CheckBox { Text = "Tá»± Ä‘á»™ng in sau khi xÃ¡c nháº­n thanh toÃ¡n", Location = new Point(210, 168), AutoSize = true, Checked = true, Font = new Font("Segoe UI", 9F) };
 
-            Button btnTest = new Button { Text = "🖨️ In thử", Location = new Point(140, 215), Size = new Size(100, 30), Font = new Font("Segoe UI", 9F) };
-            Button btnSave = new Button { Text = "💾 Lưu cấu hình", Location = new Point(250, 215), Size = new Size(120, 30), Font = new Font("Segoe UI", 9F, FontStyle.Bold), BackColor = Color.FromArgb(40, 120, 200), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
-            Button btnClose = new Button { Text = "❌ Đóng", Location = new Point(380, 215), Size = new Size(90, 30), Font = new Font("Segoe UI", 9F) };
+            Button btnTest = new Button { Text = "ðŸ–¨ï¸ In thá»­", Location = new Point(140, 215), Size = new Size(100, 30), Font = new Font("Segoe UI", 9F) };
+            Button btnSave = new Button { Text = "ðŸ’¾ LÆ°u cáº¥u hÃ¬nh", Location = new Point(250, 215), Size = new Size(120, 30), Font = new Font("Segoe UI", 9F, FontStyle.Bold), BackColor = Color.FromArgb(40, 120, 200), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+            Button btnClose = new Button { Text = "âŒ ÄÃ³ng", Location = new Point(380, 215), Size = new Size(90, 30), Font = new Font("Segoe UI", 9F) };
 
             pnlMain.Controls.AddRange(new Control[] { lblHeader, lblReceipt, cboReceipt, lblKitchen, cboKitchen, lblCopies, numCopies, chkAuto, btnTest, btnSave, btnClose });
             f.Controls.Add(pnlMain);
@@ -765,23 +1043,23 @@ namespace QuanLyNhaHang.Services
         {
             Form f = new Form
             {
-                Text = "Chuyển bàn",
+                Text = "Chuyá»ƒn bÃ n",
                 Size = new Size(480, 260),
                 StartPosition = FormStartPosition.CenterParent,
                 BackColor = Color.White
             };
 
             Panel pnlMain = new Panel { Dock = DockStyle.Fill, Padding = new Padding(20) };
-            Label lblHeader = new Label { Text = "CHUYỂN BÀN KHÁCH DÙNG DỊCH VỤ", Font = new Font("Segoe UI", 11F, FontStyle.Bold), ForeColor = Color.FromArgb(0, 50, 120), Location = new Point(20, 15), AutoSize = true };
+            Label lblHeader = new Label { Text = "CHUYá»‚N BÃ€N KHÃCH DÃ™NG Dá»ŠCH Vá»¤", Font = new Font("Segoe UI", 11F, FontStyle.Bold), ForeColor = Color.FromArgb(0, 50, 120), Location = new Point(20, 15), AutoSize = true };
 
-            Label lblFrom = new Label { Text = "Từ bàn:", Location = new Point(20, 60), AutoSize = true, Font = new Font("Segoe UI", 9F) };
+            Label lblFrom = new Label { Text = "Tá»« bÃ n:", Location = new Point(20, 60), AutoSize = true, Font = new Font("Segoe UI", 9F) };
             ComboBox cboFrom = new ComboBox { Location = new Point(90, 57), Width = 140, DropDownStyle = ComboBoxStyle.DropDownList };
 
-            Label lblTo = new Label { Text = "Sang bàn:", Location = new Point(250, 60), AutoSize = true, Font = new Font("Segoe UI", 9F) };
+            Label lblTo = new Label { Text = "Sang bÃ n:", Location = new Point(250, 60), AutoSize = true, Font = new Font("Segoe UI", 9F) };
             ComboBox cboTo = new ComboBox { Location = new Point(320, 57), Width = 140, DropDownStyle = ComboBoxStyle.DropDownList };
 
-            Button btnExec = new Button { Text = "🔄 Thực hiện chuyển bàn", Location = new Point(120, 140), Size = new Size(180, 32), Font = new Font("Segoe UI", 9F, FontStyle.Bold), BackColor = Color.FromArgb(40, 120, 200), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
-            Button btnCancel = new Button { Text = "❌ Hủy bỏ", Location = new Point(310, 140), Size = new Size(90, 32), Font = new Font("Segoe UI", 9F) };
+            Button btnExec = new Button { Text = "ðŸ”„ Thá»±c hiá»‡n chuyá»ƒn bÃ n", Location = new Point(120, 140), Size = new Size(180, 32), Font = new Font("Segoe UI", 9F, FontStyle.Bold), BackColor = Color.FromArgb(40, 120, 200), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+            Button btnCancel = new Button { Text = "âŒ Há»§y bá»", Location = new Point(310, 140), Size = new Size(90, 32), Font = new Font("Segoe UI", 9F) };
 
             pnlMain.Controls.AddRange(new Control[] { lblHeader, lblFrom, cboFrom, lblTo, cboTo, btnExec, btnCancel });
             f.Controls.Add(pnlMain);
@@ -801,20 +1079,20 @@ namespace QuanLyNhaHang.Services
             // Top Action Toolbar matching Image 2
             ToolStrip tsAction = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Padding = new Padding(6, 4, 6, 4) };
 
-            ToolStripLabel lblFrom = new ToolStripLabel(" Từ ngày: ");
+            ToolStripLabel lblFrom = new ToolStripLabel(" Tá»« ngÃ y: ");
             ToolStripControlHost hostFrom = new ToolStripControlHost(new DateTimePicker { Format = DateTimePickerFormat.Short, Width = 100, Value = DateTime.Now.AddDays(-30) });
-            ToolStripLabel lblTo = new ToolStripLabel(" Đến ngày: ");
+            ToolStripLabel lblTo = new ToolStripLabel(" Äáº¿n ngÃ y: ");
             ToolStripControlHost hostTo = new ToolStripControlHost(new DateTimePicker { Format = DateTimePickerFormat.Short, Width = 100, Value = DateTime.Now });
 
-            ToolStripLabel lblSearch = new ToolStripLabel("  Tìm kiếm: ");
+            ToolStripLabel lblSearch = new ToolStripLabel("  TÃ¬m kiáº¿m: ");
             ToolStripControlHost hostSearch = new ToolStripControlHost(new TextBox { Width = 140 });
 
-            ToolStripButton btnFilter = new ToolStripButton("🔍 Lọc");
-            ToolStripButton btnAdd = new ToolStripButton("➕ Thêm mới");
-            ToolStripButton btnEdit = new ToolStripButton("✏️ Sửa");
-            ToolStripButton btnDelete = new ToolStripButton("❌ Xóa");
-            ToolStripButton btnExport = new ToolStripButton("📊 Xuất Excel");
-            ToolStripButton btnReload = new ToolStripButton("🔄 Nạp lại");
+            ToolStripButton btnFilter = new ToolStripButton("ðŸ” Lá»c");
+            ToolStripButton btnAdd = new ToolStripButton("âž• ThÃªm má»›i");
+            ToolStripButton btnEdit = new ToolStripButton("âœï¸ Sá»­a");
+            ToolStripButton btnDelete = new ToolStripButton("âŒ XÃ³a");
+            ToolStripButton btnExport = new ToolStripButton("ðŸ“Š Xuáº¥t Excel");
+            ToolStripButton btnReload = new ToolStripButton("ðŸ”„ Náº¡p láº¡i");
 
             tsAction.Items.AddRange(new ToolStripItem[] {
                 lblFrom, hostFrom, lblTo, hostTo, lblSearch, hostSearch, btnFilter, new ToolStripSeparator(),
@@ -835,7 +1113,7 @@ namespace QuanLyNhaHang.Services
 
             // Bottom Status / Totals Bar
             StatusStrip ss = new StatusStrip();
-            ToolStripStatusLabel lblCount = new ToolStripStatusLabel { Text = "Tổng số bản ghi: 0 | Tổng giá trị: 0 VNĐ" };
+            ToolStripStatusLabel lblCount = new ToolStripStatusLabel { Text = "Tá»•ng sá»‘ báº£n ghi: 0 | Tá»•ng giÃ¡ trá»‹: 0 VNÄ" };
             ss.Items.Add(lblCount);
 
             f.Controls.Add(dgv);
@@ -850,17 +1128,17 @@ namespace QuanLyNhaHang.Services
                     if (dt != null && dt.Rows.Count > 0)
                     {
                         dgv.DataSource = dt;
-                        lblCount.Text = $"Tổng số bản ghi: {dt.Rows.Count:N0}";
+                        lblCount.Text = $"Tá»•ng sá»‘ báº£n ghi: {dt.Rows.Count:N0}";
 
                         // Format numbers
                         foreach (DataGridViewColumn col in dgv.Columns)
                         {
                             if (col.ValueType == typeof(decimal) || col.ValueType == typeof(double) || col.ValueType == typeof(int) || col.ValueType == typeof(long))
                             {
-                                if (col.Name.IndexOf("tiền", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                    col.Name.IndexOf("nợ", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                    col.Name.IndexOf("giá", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                    col.Name.IndexOf("cộng", StringComparison.OrdinalIgnoreCase) >= 0)
+                                if (col.Name.IndexOf("tiá»n", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                    col.Name.IndexOf("ná»£", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                    col.Name.IndexOf("giÃ¡", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                    col.Name.IndexOf("cá»™ng", StringComparison.OrdinalIgnoreCase) >= 0)
                                 {
                                     col.DefaultCellStyle.Format = "#,#00";
                                     col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
@@ -890,34 +1168,34 @@ namespace QuanLyNhaHang.Services
                     string lower = formName.ToLower();
                     string query = "";
 
-                    if (lower.Contains("công nợ khách hàng"))
+                    if (lower.Contains("cÃ´ng ná»£ khÃ¡ch hÃ ng"))
                     {
                         query = @"
-                            SELECT FIRST 50 H.SOHD AS ""Số phiếu"", H.NGAY AS ""Ngày"", K.NAME AS ""Khách hàng"", H.TONGCONG AS ""Tổng tiền"", H.CONGNO AS ""Còn nợ"", H.NOTE AS ""Ghi chú""
+                            SELECT FIRST 50 H.SOHD AS ""Sá»‘ phiáº¿u"", H.NGAY AS ""NgÃ y"", K.NAME AS ""KhÃ¡ch hÃ ng"", H.TONGCONG AS ""Tá»•ng tiá»n"", H.CONGNO AS ""CÃ²n ná»£"", H.NOTE AS ""Ghi chÃº""
                             FROM TDONHANG H
                             LEFT JOIN DKHACHHANG K ON H.DKHACHHANGID = K.ID
                             ORDER BY H.NGAY DESC";
                     }
-                    else if (lower.Contains("công nợ nhà cung cấp"))
+                    else if (lower.Contains("cÃ´ng ná»£ nhÃ  cung cáº¥p"))
                     {
                         query = @"
-                            SELECT FIRST 50 N.SOPHIEU AS ""Số phiếu"", N.NGAY AS ""Ngày"", C.NAME AS ""Nhà cung cấp"", N.TONGTIEN AS ""Tổng tiền"", N.NOTE AS ""Ghi chú""
+                            SELECT FIRST 50 N.SOPHIEU AS ""Sá»‘ phiáº¿u"", N.NGAY AS ""NgÃ y"", C.NAME AS ""NhÃ  cung cáº¥p"", N.TONGTIEN AS ""Tá»•ng tiá»n"", N.NOTE AS ""Ghi chÃº""
                             FROM TPHIEUNHAPKHO N
                             LEFT JOIN DNHACUNGCAP C ON N.DNHACUNGCAPID = C.ID
                             ORDER BY N.NGAY DESC";
                     }
-                    else if (lower.Contains("phiếu chi"))
+                    else if (lower.Contains("phiáº¿u chi"))
                     {
                         query = @"
-                            SELECT FIRST 50 SOPHIEU AS ""Số phiếu"", NGAY AS ""Ngày"", SOTIEN AS ""Số tiền chi"", LYDO AS ""Lý do chi"", NGUOINHAN AS ""Người nhận""
+                            SELECT FIRST 50 SOPHIEU AS ""Sá»‘ phiáº¿u"", NGAY AS ""NgÃ y"", SOTIEN AS ""Sá»‘ tiá»n chi"", LYDO AS ""LÃ½ do chi"", NGUOINHAN AS ""NgÆ°á»i nháº­n""
                             FROM TTHUCHI
                             WHERE SOTIEN < 0 OR LOAI = 1
                             ORDER BY NGAY DESC";
                     }
-                    else if (lower.Contains("phiếu thu"))
+                    else if (lower.Contains("phiáº¿u thu"))
                     {
                         query = @"
-                            SELECT FIRST 50 SOPHIEU AS ""Số phiếu"", NGAY AS ""Ngày"", SOTIEN AS ""Số tiền thu"", LYDO AS ""Lý do thu"", NGUOINOP AS ""Người nộp""
+                            SELECT FIRST 50 SOPHIEU AS ""Sá»‘ phiáº¿u"", NGAY AS ""NgÃ y"", SOTIEN AS ""Sá»‘ tiá»n thu"", LYDO AS ""LÃ½ do thu"", NGUOINOP AS ""NgÆ°á»i ná»™p""
                             FROM TTHUCHI
                             WHERE SOTIEN >= 0 OR LOAI = 0
                             ORDER BY NGAY DESC";
@@ -949,15 +1227,15 @@ namespace QuanLyNhaHang.Services
         private static string GetTableNameForForm(string formName)
         {
             string lower = formName.ToLower();
-            if (lower.Contains("mặt hàng")) return "DMATHANG";
-            if (lower.Contains("bàn")) return "DBAN";
-            if (lower.Contains("khách hàng")) return "DKHACHHANG";
-            if (lower.Contains("nhân viên")) return "DNHANVIEN";
+            if (lower.Contains("máº·t hÃ ng")) return "DMATHANG";
+            if (lower.Contains("bÃ n")) return "DBAN";
+            if (lower.Contains("khÃ¡ch hÃ ng")) return "DKHACHHANG";
+            if (lower.Contains("nhÃ¢n viÃªn")) return "DNHANVIEN";
             if (lower.Contains("kho")) return "DKHOHANG";
-            if (lower.Contains("nhà cung cấp")) return "DNHACUNGCAP";
-            if (lower.Contains("phiếu chi") || lower.Contains("phiếu thu") || lower.Contains("thu chi")) return "TTHUCHI";
-            if (lower.Contains("bảng giá")) return "DBANGGIA";
-            if (lower.Contains("đơn hàng") || lower.Contains("hóa đơn") || lower.Contains("công nợ")) return "TDONHANG";
+            if (lower.Contains("nhÃ  cung cáº¥p")) return "DNHACUNGCAP";
+            if (lower.Contains("phiáº¿u chi") || lower.Contains("phiáº¿u thu") || lower.Contains("thu chi")) return "TTHUCHI";
+            if (lower.Contains("báº£ng giÃ¡")) return "DBANGGIA";
+            if (lower.Contains("Ä‘Æ¡n hÃ ng") || lower.Contains("hÃ³a Ä‘Æ¡n") || lower.Contains("cÃ´ng ná»£")) return "TDONHANG";
             return null;
         }
 
@@ -1071,8 +1349,8 @@ namespace QuanLyNhaHang.Services
             }
             catch
             {
-                list.Add(new DbFormTypeItem { Id = 0, Name = "Thêm sửa" });
-                list.Add(new DbFormTypeItem { Id = 1, Name = "Quản trị" });
+                list.Add(new DbFormTypeItem { Id = 0, Name = "ThÃªm sá»­a" });
+                list.Add(new DbFormTypeItem { Id = 1, Name = "Quáº£n trá»‹" });
                 list.Add(new DbFormTypeItem { Id = 6, Name = "Custom Form" });
             }
             return list;
@@ -1082,17 +1360,17 @@ namespace QuanLyNhaHang.Services
         {
             switch (type)
             {
-                case No1Lib.Sys.FORM_TYPE.THEM_SUA: return "Thêm sửa";
-                case No1Lib.Sys.FORM_TYPE.QUAN_TRI: return "Quản trị";
-                case No1Lib.Sys.FORM_TYPE.CONG_NO_TRU_DUOI: return "Công nợ trừ đuôi";
-                case No1Lib.Sys.FORM_TYPE.CONG_NO_THEO_DON: return "Công nợ theo hóa đơn";
-                case No1Lib.Sys.FORM_TYPE.TON_QUY: return "Tồn quỹ";
+                case No1Lib.Sys.FORM_TYPE.THEM_SUA: return "ThÃªm sá»­a";
+                case No1Lib.Sys.FORM_TYPE.QUAN_TRI: return "Quáº£n trá»‹";
+                case No1Lib.Sys.FORM_TYPE.CONG_NO_TRU_DUOI: return "CÃ´ng ná»£ trá»« Ä‘uÃ´i";
+                case No1Lib.Sys.FORM_TYPE.CONG_NO_THEO_DON: return "CÃ´ng ná»£ theo hÃ³a Ä‘Æ¡n";
+                case No1Lib.Sys.FORM_TYPE.TON_QUY: return "Tá»“n quá»¹";
                 case No1Lib.Sys.FORM_TYPE.CUSTOM_CONTROL: return "Custom Control";
                 case No1Lib.Sys.FORM_TYPE.CUSTOM_FORM: return "Custom Form";
-                case No1Lib.Sys.FORM_TYPE.TON_KHO: return "Tồn kho";
-                case No1Lib.Sys.FORM_TYPE.THEM_SUA_KO_THEO_LOAI: return "Thêm sửa không theo loại";
-                case No1Lib.Sys.FORM_TYPE.TON_QUY_TAB: return "Tồn quỹ (tab)";
-                case No1Lib.Sys.FORM_TYPE.TON_NHIEU_KHO: return "Tồn nhiều kho";
+                case No1Lib.Sys.FORM_TYPE.TON_KHO: return "Tá»“n kho";
+                case No1Lib.Sys.FORM_TYPE.THEM_SUA_KO_THEO_LOAI: return "ThÃªm sá»­a khÃ´ng theo loáº¡i";
+                case No1Lib.Sys.FORM_TYPE.TON_QUY_TAB: return "Tá»“n quá»¹ (tab)";
+                case No1Lib.Sys.FORM_TYPE.TON_NHIEU_KHO: return "Tá»“n nhiá»u kho";
                 case No1Lib.Sys.FORM_TYPE.CUSTOM_CLASS: return "Custom Class";
                 default: return type.ToString();
             }
@@ -1613,8 +1891,8 @@ namespace QuanLyNhaHang.Services
         }
         public static Form ParseAeLayoutToForm(string aeLayoutXml, string formTitle = "")
         {
-            int defaultW = (formTitle != null && (formTitle.IndexOf("khu vực", StringComparison.OrdinalIgnoreCase) >= 0 || formTitle.IndexOf("máy in", StringComparison.OrdinalIgnoreCase) >= 0 || formTitle.IndexOf("chuyển", StringComparison.OrdinalIgnoreCase) >= 0)) ? 546 : 600;
-            int defaultH = (formTitle != null && (formTitle.IndexOf("khu vực", StringComparison.OrdinalIgnoreCase) >= 0 || formTitle.IndexOf("máy in", StringComparison.OrdinalIgnoreCase) >= 0 || formTitle.IndexOf("chuyển", StringComparison.OrdinalIgnoreCase) >= 0)) ? 374 : 400;
+            int defaultW = (formTitle != null && (formTitle.IndexOf("khu vá»±c", StringComparison.OrdinalIgnoreCase) >= 0 || formTitle.IndexOf("mÃ¡y in", StringComparison.OrdinalIgnoreCase) >= 0 || formTitle.IndexOf("chuyá»ƒn", StringComparison.OrdinalIgnoreCase) >= 0)) ? 546 : 600;
+            int defaultH = (formTitle != null && (formTitle.IndexOf("khu vá»±c", StringComparison.OrdinalIgnoreCase) >= 0 || formTitle.IndexOf("mÃ¡y in", StringComparison.OrdinalIgnoreCase) >= 0 || formTitle.IndexOf("chuyá»ƒn", StringComparison.OrdinalIgnoreCase) >= 0)) ? 374 : 400;
 
             Form mainForm = new Form
             {
@@ -1928,7 +2206,7 @@ namespace QuanLyNhaHang.Services
                             {
                                 try
                                 {
-                                    comboCol.Items.Add("(Mặc định hệ thống)");
+                                    comboCol.Items.Add("(Máº·c Ä‘á»‹nh há»‡ thá»‘ng)");
                                     foreach (string printer in System.Drawing.Printing.PrinterSettings.InstalledPrinters)
                                     {
                                         if (!comboCol.Items.Contains(printer))
@@ -2233,7 +2511,7 @@ namespace QuanLyNhaHang.Services
 
                 // Check if this form is a container layout needing POS sub-controls (e.g. SuDungDichVu)
                 bool isPosContainer = string.Equals(model.ClassName, "SuDungDichVu", StringComparison.OrdinalIgnoreCase) ||
-                                      string.Equals(model.Name, "Sử dụng dịch vụ", StringComparison.OrdinalIgnoreCase) ||
+                                      string.Equals(model.Name, "Sá»­ dá»¥ng dá»‹ch vá»¥", StringComparison.OrdinalIgnoreCase) ||
                                       docMain.SelectSingleNode("//Object[@name='splitMain']") != null;
 
                 if (isPosContainer)
@@ -2324,7 +2602,7 @@ namespace QuanLyNhaHang.Services
                 using (FbConnection conn = new FbConnection(GetConnectionString()))
                 {
                     conn.Open();
-                    // Prioritize exact POS form ID 'f3f7bb77-f4ba-4111-9066-014f52be79a0' (Hóa đơn nhà hàng - 173KB POS Order interface)
+                    // Prioritize exact POS form ID 'f3f7bb77-f4ba-4111-9066-014f52be79a0' (HÃ³a Ä‘Æ¡n nhÃ  hÃ ng - 173KB POS Order interface)
                     string sql = @"SELECT AELAYOUT 
                                    FROM SFORM 
                                    WHERE ID = 'f3f7bb77-f4ba-4111-9066-014f52be79a0' AND AELAYOUT IS NOT NULL";
@@ -2399,7 +2677,7 @@ namespace QuanLyNhaHang.Services
                 {
                     btnSave.Click += (s, e) =>
                     {
-                        MessageBox.Show("Đã lưu và xác nhận đơn hàng thành công!", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        MessageBox.Show("ÄÃ£ lÆ°u vÃ  xÃ¡c nháº­n Ä‘Æ¡n hÃ ng thÃ nh cÃ´ng!", "ThÃ´ng bÃ¡o", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     };
                 }
             }
@@ -2577,7 +2855,7 @@ namespace QuanLyNhaHang.Services
                 Control lblBan = FindControlRecursive(form, "lblNAME") ?? FindControlRecursive(form, "label1");
                 if (lblBan != null && lblBan.Text != null)
                 {
-                    lblBan.Text = "Bàn: " + banName;
+                    lblBan.Text = "BÃ n: " + banName;
                 }
 
                 Control grMua = FindControlRecursive(form, "grMua") ?? FindControlRecursive(form, "grMain");
@@ -2587,12 +2865,12 @@ namespace QuanLyNhaHang.Services
                 if (dgvOrder != null)
                 {
                     DataTable dtOrder = new DataTable();
-                    dtOrder.Columns.Add("Tên hàng", typeof(string));
-                    dtOrder.Columns.Add("ĐVT", typeof(string));
+                    dtOrder.Columns.Add("TÃªn hÃ ng", typeof(string));
+                    dtOrder.Columns.Add("ÄVT", typeof(string));
                     dtOrder.Columns.Add("SL", typeof(decimal));
-                    dtOrder.Columns.Add("Đ giá", typeof(decimal));
+                    dtOrder.Columns.Add("Ä giÃ¡", typeof(decimal));
                     dtOrder.Columns.Add("CK%", typeof(decimal));
-                    dtOrder.Columns.Add("T tiền", typeof(decimal));
+                    dtOrder.Columns.Add("T tiá»n", typeof(decimal));
 
                     decimal totalSum = 0m;
                     if (!string.IsNullOrEmpty(orderId))
@@ -2783,10 +3061,10 @@ namespace QuanLyNhaHang.Services
                     if (string.IsNullOrEmpty(tName))
                     {
                         string tLower = formTitle != null ? formTitle.ToLower() : "";
-                        if (tLower.Contains("lương") || tLower.Contains("chấm công") || tLower.Contains("tạm ứng")) tName = "DNHANVIEN";
-                        else if (tLower.Contains("phòng") || tLower.Contains("bàn")) tName = "DBAN";
+                        if (tLower.Contains("lÆ°Æ¡ng") || tLower.Contains("cháº¥m cÃ´ng") || tLower.Contains("táº¡m á»©ng")) tName = "DNHANVIEN";
+                        else if (tLower.Contains("phÃ²ng") || tLower.Contains("bÃ n")) tName = "DBAN";
                         else if (tLower.Contains("kho")) tName = "DKHOHANG";
-                        else if (tLower.Contains("máy in")) tName = "DKHUVUC";
+                        else if (tLower.Contains("mÃ¡y in")) tName = "DKHUVUC";
                     }
 
                     if (!string.IsNullOrEmpty(tName))
@@ -2808,13 +3086,13 @@ namespace QuanLyNhaHang.Services
                 string titleLower = formTitle != null ? formTitle.ToLower() : "";
                 string dgvNameLower = dgv.Name != null ? dgv.Name.ToLower() : "";
 
-                bool isPhongOrBan = titleLower.Contains("phòng") || titleLower.Contains("bàn")
+                bool isPhongOrBan = titleLower.Contains("phÃ²ng") || titleLower.Contains("bÃ n")
                     || dgv.Columns.Contains("colPhong") || dgv.Columns.Contains("colBan");
 
                 if (isPhongOrBan)
                 {
                     DataTable dtBan = ExecuteSelectQuery(@"
-                        SELECT B.ID, B.NAME AS PHONG, B.NAME AS BAN, K.NAME AS KHUVUC, 'Phòng thường' AS LOAIPHONG
+                        SELECT B.ID, B.NAME AS PHONG, B.NAME AS BAN, K.NAME AS KHUVUC, 'PhÃ²ng thÆ°á»ng' AS LOAIPHONG
                         FROM DBAN B
                         LEFT JOIN DKHUVUC K ON B.DKHUVUCID = K.ID
                         ORDER BY K.NAME, B.NAME");
@@ -2843,7 +3121,7 @@ namespace QuanLyNhaHang.Services
                     return;
                 }
 
-                bool isDvt = titleLower.Contains("đơn vị tính") || dgv.Columns.Contains("colDvt") || dgv.Columns.Contains("colDonViTinh");
+                bool isDvt = titleLower.Contains("Ä‘Æ¡n vá»‹ tÃ­nh") || dgv.Columns.Contains("colDvt") || dgv.Columns.Contains("colDonViTinh");
                 if (isDvt)
                 {
                     DataTable dtDvt = ExecuteSelectQuery("SELECT ID, NAME FROM DDONVITINH ORDER BY NAME");
@@ -2866,7 +3144,7 @@ namespace QuanLyNhaHang.Services
                     return;
                 }
 
-                bool isKhuVuc = (formTitle != null && (formTitle.IndexOf("khu vực", StringComparison.OrdinalIgnoreCase) >= 0 || formTitle.IndexOf("máy in", StringComparison.OrdinalIgnoreCase) >= 0))
+                bool isKhuVuc = (formTitle != null && (formTitle.IndexOf("khu vá»±c", StringComparison.OrdinalIgnoreCase) >= 0 || formTitle.IndexOf("mÃ¡y in", StringComparison.OrdinalIgnoreCase) >= 0))
                     || dgv.Columns.Contains("colKhuVuc") || dgv.Columns.Contains("colMayIn");
 
                 if (isKhuVuc)
@@ -2880,16 +3158,16 @@ namespace QuanLyNhaHang.Services
                             DataGridViewRow row = dgv.Rows[rowIndex];
                             string nameVal = r["NAME"]?.ToString() ?? "";
                             string mayInVal = r["MAYIN"]?.ToString();
-                            if (string.IsNullOrEmpty(mayInVal)) mayInVal = "(Mặc định hệ thống)";
+                            if (string.IsNullOrEmpty(mayInVal)) mayInVal = "(Máº·c Ä‘á»‹nh há»‡ thá»‘ng)";
 
                             for (int i = 0; i < dgv.Columns.Count; i++)
                             {
                                 var col = dgv.Columns[i];
-                                if (col.Name.Equals("colKhuVuc", StringComparison.OrdinalIgnoreCase) || col.HeaderText.IndexOf("Khu vực", StringComparison.OrdinalIgnoreCase) >= 0 || i == 0)
+                                if (col.Name.Equals("colKhuVuc", StringComparison.OrdinalIgnoreCase) || col.HeaderText.IndexOf("Khu vá»±c", StringComparison.OrdinalIgnoreCase) >= 0 || i == 0)
                                 {
                                     row.Cells[i].Value = nameVal;
                                 }
-                                else if (col.Name.Equals("colMayIn", StringComparison.OrdinalIgnoreCase) || col.HeaderText.IndexOf("Máy in", StringComparison.OrdinalIgnoreCase) >= 0 || i == 1)
+                                else if (col.Name.Equals("colMayIn", StringComparison.OrdinalIgnoreCase) || col.HeaderText.IndexOf("MÃ¡y in", StringComparison.OrdinalIgnoreCase) >= 0 || i == 1)
                                 {
                                     if (col is DataGridViewComboBoxColumn comboCol && !comboCol.Items.Contains(mayInVal))
                                     {
@@ -2903,7 +3181,7 @@ namespace QuanLyNhaHang.Services
                     return;
                 }
 
-                bool isKhuyenMai = (formTitle != null && formTitle.IndexOf("khuyến mại", StringComparison.OrdinalIgnoreCase) >= 0)
+                bool isKhuyenMai = (formTitle != null && formTitle.IndexOf("khuyáº¿n máº¡i", StringComparison.OrdinalIgnoreCase) >= 0)
                     || dgv.Columns.Contains("colMa") || dgv.Columns.Contains("colTen");
 
                 if (isKhuyenMai)
@@ -2928,7 +3206,7 @@ namespace QuanLyNhaHang.Services
                     return;
                 }
 
-                bool isTinhLuong = titleLower.Contains("lương") || titleLower.Contains("chấm công") || titleLower.Contains("bảng lương") || titleLower.Contains("tạm ứng");
+                bool isTinhLuong = titleLower.Contains("lÆ°Æ¡ng") || titleLower.Contains("cháº¥m cÃ´ng") || titleLower.Contains("báº£ng lÆ°Æ¡ng") || titleLower.Contains("táº¡m á»©ng");
                 if (isTinhLuong)
                 {
                     DataTable dtLuong = ExecuteSelectQuery("SELECT FIRST 50 * FROM TBANGLUONG");
@@ -3640,3 +3918,4 @@ namespace QuanLyNhaHang.Services
         }
     }
 }
+
