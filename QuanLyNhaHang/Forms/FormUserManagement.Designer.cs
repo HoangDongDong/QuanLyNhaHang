@@ -133,10 +133,10 @@ namespace QuanLyNhaHang.Forms
             // tvGroups
             // 
             this.tvGroups.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.tvGroups.Location = new System.Drawing.Point(0, 27);
+            this.tvGroups.Location = new System.Drawing.Point(0, 31);
             this.tvGroups.Margin = new System.Windows.Forms.Padding(4);
             this.tvGroups.Name = "tvGroups";
-            this.tvGroups.Size = new System.Drawing.Size(280, 244);
+            this.tvGroups.Size = new System.Drawing.Size(280, 240);
             this.tvGroups.TabIndex = 1;
             // 
             // tsGroups
@@ -148,7 +148,7 @@ namespace QuanLyNhaHang.Forms
             this.btnGroupDelete});
             this.tsGroups.Location = new System.Drawing.Point(0, 0);
             this.tsGroups.Name = "tsGroups";
-            this.tsGroups.Size = new System.Drawing.Size(280, 27);
+            this.tsGroups.Size = new System.Drawing.Size(280, 31);
             this.tsGroups.TabIndex = 0;
             this.tsGroups.Text = "toolStrip1";
             // 
@@ -156,21 +156,21 @@ namespace QuanLyNhaHang.Forms
             // 
             this.btnGroupAdd.ImageTransparentColor = System.Drawing.Color.Magenta;
             this.btnGroupAdd.Name = "btnGroupAdd";
-            this.btnGroupAdd.Size = new System.Drawing.Size(117, 24);
+            this.btnGroupAdd.Size = new System.Drawing.Size(117, 28);
             this.btnGroupAdd.Text = "➕ Thêm nhóm";
             // 
             // btnGroupEdit
             // 
             this.btnGroupEdit.ImageTransparentColor = System.Drawing.Color.Magenta;
             this.btnGroupEdit.Name = "btnGroupEdit";
-            this.btnGroupEdit.Size = new System.Drawing.Size(63, 24);
+            this.btnGroupEdit.Size = new System.Drawing.Size(63, 28);
             this.btnGroupEdit.Text = "✏️ Sửa";
             // 
             // btnGroupDelete
             // 
             this.btnGroupDelete.ImageTransparentColor = System.Drawing.Color.Magenta;
             this.btnGroupDelete.Name = "btnGroupDelete";
-            this.btnGroupDelete.Size = new System.Drawing.Size(64, 24);
+            this.btnGroupDelete.Size = new System.Drawing.Size(64, 28);
             this.btnGroupDelete.Text = "❌ Xóa";
             // 
             // dgvUsers
@@ -183,14 +183,14 @@ namespace QuanLyNhaHang.Forms
             this.colSTT,
             this.colAccount});
             this.dgvUsers.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.dgvUsers.Location = new System.Drawing.Point(0, 27);
+            this.dgvUsers.Location = new System.Drawing.Point(0, 31);
             this.dgvUsers.Margin = new System.Windows.Forms.Padding(4);
             this.dgvUsers.Name = "dgvUsers";
             this.dgvUsers.ReadOnly = true;
             this.dgvUsers.RowHeadersVisible = false;
             this.dgvUsers.RowHeadersWidth = 51;
             this.dgvUsers.SelectionMode = System.Windows.Forms.DataGridViewSelectionMode.FullRowSelect;
-            this.dgvUsers.Size = new System.Drawing.Size(280, 266);
+            this.dgvUsers.Size = new System.Drawing.Size(280, 262);
             this.dgvUsers.TabIndex = 1;
             // 
             // colSTT
@@ -227,7 +227,7 @@ namespace QuanLyNhaHang.Forms
             this.btnUserDelete});
             this.tsUsers.Location = new System.Drawing.Point(0, 0);
             this.tsUsers.Name = "tsUsers";
-            this.tsUsers.Size = new System.Drawing.Size(280, 27);
+            this.tsUsers.Size = new System.Drawing.Size(280, 31);
             this.tsUsers.TabIndex = 0;
             this.tsUsers.Text = "toolStrip2";
             // 
@@ -235,21 +235,21 @@ namespace QuanLyNhaHang.Forms
             // 
             this.btnUserAdd.ImageTransparentColor = System.Drawing.Color.Magenta;
             this.btnUserAdd.Name = "btnUserAdd";
-            this.btnUserAdd.Size = new System.Drawing.Size(140, 24);
+            this.btnUserAdd.Size = new System.Drawing.Size(140, 28);
             this.btnUserAdd.Text = "➕ Thêm tài khoản";
             // 
             // btnUserEdit
             // 
             this.btnUserEdit.ImageTransparentColor = System.Drawing.Color.Magenta;
             this.btnUserEdit.Name = "btnUserEdit";
-            this.btnUserEdit.Size = new System.Drawing.Size(63, 24);
+            this.btnUserEdit.Size = new System.Drawing.Size(63, 28);
             this.btnUserEdit.Text = "✏️ Sửa";
             // 
             // btnUserDelete
             // 
             this.btnUserDelete.ImageTransparentColor = System.Drawing.Color.Magenta;
             this.btnUserDelete.Name = "btnUserDelete";
-            this.btnUserDelete.Size = new System.Drawing.Size(64, 24);
+            this.btnUserDelete.Size = new System.Drawing.Size(64, 28);
             this.btnUserDelete.Text = "❌ Xóa";
             // 
             // pnlRight

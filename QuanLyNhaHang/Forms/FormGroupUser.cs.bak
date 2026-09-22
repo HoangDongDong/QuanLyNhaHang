@@ -1,0 +1,158 @@
+using System;
+using System.Data;
+using System.Windows.Forms;
+using FirebirdSql.Data.FirebirdClient;
+using QuanLyNhaHang.Services;
+
+namespace QuanLyNhaHang.Forms
+{
+    public partial class FormGroupUser : Form
+    {
+        private string _groupId;
+        private bool _isEditMode;
+
+        public FormGroupUser(string groupId = null)
+        {
+            InitializeComponent();
+            _groupId = groupId;
+            _isEditMode = !string.IsNullOrEmpty(groupId);
+        }
+
+        private class ImageItem
+        {
+            public string Id { get; set; }
+            public string Name { get; set; }
+            public override string ToString() => Name;
+        }
+
+        private void FormGroupUser_Load(object sender, EventArgs e)
+        {
+            LoadImagesFromDb();
+            if (_isEditMode)
+            {
+                LoadData();
+            }
+        }
+
+        private void LoadImagesFromDb()
+        {
+            try
+            {
+                using (FbConnection conn = new FbConnection(DbFormService.GetConnectionString()))
+                {
+                    conn.Open();
+                    string sql = "SELECT ID, NAME FROM DANH ORDER BY NAME";
+                    using (FbCommand cmd = new FbCommand(sql, conn))
+                    using (FbDataReader reader = cmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            cmbImage.Items.Add(new ImageItem { 
+                                Id = reader["ID"].ToString(), 
+                                Name = reader["NAME"].ToString() 
+                            });
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Lỗi tải danh mục ảnh: " + ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void LoadData()
+        {
+            try
+            {
+                using (FbConnection conn = new FbConnection(DbFormService.GetConnectionString()))
+                {
+                    conn.Open();
+                    string sql = "SELECT NAME, NOTE, SIMAGEID FROM SGROUPUSER WHERE ID = @id";
+                    using (FbCommand cmd = new FbCommand(sql, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@id", _groupId);
+                        using (FbDataReader reader = cmd.ExecuteReader())
+                        {
+                            if (reader.Read())
+                            {
+                                txtName.Text = reader["NAME"].ToString();
+                                txtNote.Text = reader["NOTE"].ToString();
+                                string imgId = reader["SIMAGEID"].ToString();
+                                foreach (var item in cmbImage.Items)
+                                {
+                                    if (item is ImageItem ii && ii.Id == imgId)
+                                    {
+                                        cmbImage.SelectedItem = item;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Lỗi tải dữ liệu: " + ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void btnSave_Click(object sender, EventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(txtName.Text))
+            {
+                MessageBox.Show("Tên nhóm không được để trống!", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                txtName.Focus();
+                return;
+            }
+
+            try
+            {
+                using (FbConnection conn = new FbConnection(DbFormService.GetConnectionString()))
+                {
+                    conn.Open();
+                    string imageId = (cmbImage.SelectedItem as ImageItem)?.Id ?? "";
+                    if (_isEditMode)
+                    {
+                        string sql = "UPDATE SGROUPUSER SET NAME = @name, NOTE = @note, SIMAGEID = @image WHERE ID = @id";
+                        using (FbCommand cmd = new FbCommand(sql, conn))
+                        {
+                            cmd.Parameters.AddWithValue("@name", txtName.Text);
+                            cmd.Parameters.AddWithValue("@note", txtNote.Text);
+                            cmd.Parameters.AddWithValue("@image", imageId);
+                            cmd.Parameters.AddWithValue("@id", _groupId);
+                            cmd.ExecuteNonQuery();
+                        }
+                    }
+                    else
+                    {
+                        _groupId = Guid.NewGuid().ToString("N").Substring(0, 10).ToUpper();
+                        string sql = "INSERT INTO SGROUPUSER (ID, NAME, NOTE, SIMAGEID) VALUES (@id, @name, @note, @image)";
+                        using (FbCommand cmd = new FbCommand(sql, conn))
+                        {
+                            cmd.Parameters.AddWithValue("@id", _groupId);
+                            cmd.Parameters.AddWithValue("@name", txtName.Text);
+                            cmd.Parameters.AddWithValue("@note", txtNote.Text);
+                            cmd.Parameters.AddWithValue("@image", imageId);
+                            cmd.ExecuteNonQuery();
+                        }
+                    }
+                }
+                this.DialogResult = DialogResult.OK;
+                this.Close();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Lỗi lưu dữ liệu: " + ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void btnExit_Click(object sender, EventArgs e)
+        {
+            this.DialogResult = DialogResult.Cancel;
+            this.Close();
+        }
+    }
+}
+

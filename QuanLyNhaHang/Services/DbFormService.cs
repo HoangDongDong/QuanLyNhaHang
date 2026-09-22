@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Drawing;
@@ -82,63 +82,841 @@ namespace QuanLyNhaHang.Services
         {
             try
             {
+                Form originalActiveForm = Form.ActiveForm;
+
                 Form dynamicForm = CreateFormByName(formName);
                 if (dynamicForm == null) return false;
 
-                Form wrapper = new Form
-                {
-                    Text = dynamicForm.Text + (string.IsNullOrEmpty(idValue) ? " (Thêm)" : " (Sửa)"),
-                    Size = new Size(dynamicForm.Width + 20, dynamicForm.Height + 80),
-                    StartPosition = FormStartPosition.CenterParent,
-                    FormBorderStyle = FormBorderStyle.FixedDialog,
-                    MaximizeBox = false,
-                    MinimizeBox = false,
-                    BackColor = Color.White
-                };
+                QuanLyNhaHang.Forms.FormDataEntryTemplate wrapper = new QuanLyNhaHang.Forms.FormDataEntryTemplate();
+                string title = dynamicForm.Text + (string.IsNullOrEmpty(idValue) ? " (Thêm)" : " (Sửa)");
+                wrapper.EmbedDynamicForm(dynamicForm, title);
 
-                dynamicForm.TopLevel = false;
-                dynamicForm.FormBorderStyle = FormBorderStyle.None;
-                dynamicForm.Dock = DockStyle.Fill;
-                dynamicForm.Visible = true;
-
-                Panel pnlBottom = new Panel { Dock = DockStyle.Bottom, Height = 45, BackColor = Color.WhiteSmoke };
-                Button btnSave = new Button { Text = "Lưu", Width = 100, Height = 30, Top = 8, Left = wrapper.Width - 240, BackColor = Color.MediumSeaGreen, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
-                btnSave.FlatAppearance.BorderSize = 0;
-                Button btnCancel = new Button { Text = "Hủy", Width = 100, Height = 30, Top = 8, Left = wrapper.Width - 130, BackColor = Color.IndianRed, ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
-                btnCancel.FlatAppearance.BorderSize = 0;
-
-                pnlBottom.Controls.Add(btnSave);
-                pnlBottom.Controls.Add(btnCancel);
-
-                wrapper.Controls.Add(dynamicForm);
-                wrapper.Controls.Add(pnlBottom);
+                bool isSuserForm = string.Equals(tableName, "SUSER", StringComparison.OrdinalIgnoreCase);
 
                 // Populate lookups
                 PopulateLookupEdits(dynamicForm);
 
+                if (isSuserForm)
+                {
+                    InjectTaiKhoanNguoiDungUI(dynamicForm, wrapper);
+                }
+
                 // Load Data for Edit Mode
                 if (!string.IsNullOrEmpty(idValue))
                 {
-                    LoadDataToForm(dynamicForm, tableName, idValue);
+                    if (isSuserForm)
+                    {
+                        LoadSuserDataToForm(dynamicForm, idValue);
+                    }
+                    else
+                    {
+                        LoadDataToForm(dynamicForm, tableName, idValue);
+                    }
                 }
 
-                btnSave.Click += (s, e) =>
+                string[] idHolder = new string[] { idValue };
+
+                wrapper.btnLuu.Click += (s, e) =>
                 {
-                    if (SaveDataFromForm(dynamicForm, tableName, idValue))
+                    bool success = isSuserForm ? SaveSuserDataFromForm(dynamicForm, idHolder) : SaveDataFromForm(dynamicForm, tableName, idHolder[0]);
+                    if (success)
+                    {
+                        wrapper.DialogResult = DialogResult.OK;
+                        wrapper.Close();
+                    }
+                };
+                
+                wrapper.btnLuuMoi.Click += (s, e) =>
+                {
+                    bool success = isSuserForm ? SaveSuserDataFromForm(dynamicForm, idHolder) : SaveDataFromForm(dynamicForm, tableName, idHolder[0]);
+                    if (success)
+                    {
+                        ClearFormFields(dynamicForm);
+                        idHolder[0] = null; // Chuyển sang chế độ thêm mới
+                        wrapper.Text = dynamicForm.Text + " (Thêm)";
+                        wrapper.lblTitle.Text = wrapper.Text.ToUpper();
+                    }
+                };
+
+                wrapper.btnLuuThoat.Click += (s, e) =>
+                {
+                    bool success = isSuserForm ? SaveSuserDataFromForm(dynamicForm, idHolder) : SaveDataFromForm(dynamicForm, tableName, idHolder[0]);
+                    if (success)
                     {
                         wrapper.DialogResult = DialogResult.OK;
                         wrapper.Close();
                     }
                 };
 
-                btnCancel.Click += (s, e) => { wrapper.DialogResult = DialogResult.Cancel; wrapper.Close(); };
+                wrapper.btnThoat.Click += (s, e) => { wrapper.DialogResult = DialogResult.Cancel; wrapper.Close(); };
 
+                if (originalActiveForm != null)
+                {
+                    return wrapper.ShowDialog(originalActiveForm) == DialogResult.OK;
+                }
                 return wrapper.ShowDialog() == DialogResult.OK;
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Lỗi hiển thị form động: " + ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                using (Form topmostForm = new Form { TopMost = true })
+                {
+                    MessageBox.Show(topmostForm, "Lỗi hiển thị form động: " + ex.Message + "\n" + ex.StackTrace, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
                 return false;
+            }
+        }
+
+        private static void InjectTaiKhoanNguoiDungUI(Control form, QuanLyNhaHang.Forms.FormDataEntryTemplate wrapper)
+        {
+            try
+            {
+                if (wrapper == null) return;
+
+                // === All setup runs AFTER form is fully shown ===
+                wrapper.Shown += (sender, e) =>
+                {
+                    try
+                    {
+                        // Find lueDNHANVIENID AFTER form is rendered
+                        Control lueNV = FindControlRecursive(form, "lueDNHANVIENID");
+                        if (lueNV == null || lueNV.Parent == null) return;
+
+                        // Load DNHANVIEN data
+                        DataTable nvTable = new DataTable();
+                        Action loadNVData = () =>
+                        {
+                            try
+                            {
+                                using (FbConnection conn = new FbConnection(GetConnectionString()))
+                                {
+                                    conn.Open();
+                                    using (FbDataAdapter da = new FbDataAdapter(
+                                        "SELECT ID, NAME FROM DNHANVIEN ORDER BY NAME", conn))
+                                    {
+                                        nvTable.Clear();
+                                        da.Fill(nvTable);
+                                    }
+                                }
+                            }
+                            catch (Exception ex2)
+                            {
+                                System.Diagnostics.Debug.WriteLine("loadNVData err: " + ex2.Message);
+                            }
+                        };
+                        loadNVData();
+
+                        // Create custom dropdown UI to replace ComboBox
+                        Control lueParent = lueNV.Parent;
+                        Point loc = lueNV.Location;
+                        int w = lueNV.Width;
+
+                        // Fake ComboBox
+                        Panel fakeCombo = new Panel
+                        {
+                            Name = "fakeComboNV",
+                            Location = loc,
+                            Size = new Size(w, 23),
+                            BackColor = Color.White,
+                            Cursor = Cursors.Hand
+                        };
+                        
+                        Label lblText = new Label
+                        {
+                            Location = new Point(24, 2),
+                            Size = new Size(w - 44, 18),
+                            Text = "",
+                            TextAlign = ContentAlignment.MiddleLeft,
+                            BackColor = Color.Transparent,
+                            Cursor = Cursors.Hand
+                        };
+                        fakeCombo.Controls.Add(lblText);
+
+                        // ToolStripDropDown
+                        ToolStripDropDown dropDown = new ToolStripDropDown();
+                        dropDown.AutoSize = true;
+                        dropDown.Margin = Padding.Empty;
+                        dropDown.Padding = Padding.Empty;
+
+                        ListBox lst = new ListBox
+                        {
+                            Dock = DockStyle.Top,
+                            Height = 160,
+                            BorderStyle = BorderStyle.None,
+                            DrawMode = DrawMode.OwnerDrawFixed,
+                            ItemHeight = 22
+                        };
+
+                        Action bindList = () => {
+                            lst.Items.Clear();
+                            foreach (System.Data.DataRow r in nvTable.Rows) {
+                                lst.Items.Add(new System.Collections.Generic.KeyValuePair<string, string>(r["ID"].ToString(), r["NAME"].ToString()));
+                            }
+                        };
+                        bindList();
+
+                        // Draw dual-person icon matching reference
+                        Action<Graphics, int, int> drawPersonIcon = (g2, px, py) =>
+                        {
+                            g2.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                            using (var b = new SolidBrush(Color.FromArgb(80, 160, 60)))
+                            {
+                                g2.FillEllipse(b, px + 5, py + 0, 7, 7);
+                                var rgn = new System.Drawing.Region(new RectangleF(px + 3, py + 7, 11, 6));
+                                g2.SetClip(rgn, System.Drawing.Drawing2D.CombineMode.Replace);
+                                g2.FillEllipse(b, px + 1, py + 6, 15, 11);
+                                g2.ResetClip();
+                            }
+                            using (var b = new SolidBrush(Color.FromArgb(210, 100, 40)))
+                            {
+                                g2.FillEllipse(b, px + 1, py + 2, 7, 7);
+                                var rgn = new System.Drawing.Region(new RectangleF(px, py + 9, 11, 7));
+                                g2.SetClip(rgn, System.Drawing.Drawing2D.CombineMode.Replace);
+                                g2.FillEllipse(b, px - 1, py + 8, 14, 11);
+                                g2.ResetClip();
+                            }
+                        };
+
+                        fakeCombo.Paint += (s2, e2) =>
+                        {
+                            ControlPaint.DrawComboButton(e2.Graphics, new Rectangle(fakeCombo.Width - 17, 1, 16, fakeCombo.Height - 2), ButtonState.Normal);
+                            using (var p = new Pen(Color.FromArgb(171, 193, 222)))
+                                e2.Graphics.DrawRectangle(p, 0, 0, fakeCombo.Width - 1, fakeCombo.Height - 1);
+
+                            if (lst.SelectedIndex >= 0)
+                                drawPersonIcon(e2.Graphics, 3, 3);
+                        };
+
+                        lst.DrawItem += (s2, e2) =>
+                        {
+                            if (e2.Index < 0) return;
+                            Graphics g = e2.Graphics;
+                            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+
+                            bool sel = (e2.State & DrawItemState.Selected) != 0;
+                            if (sel)
+                            {
+                                using (var b = new SolidBrush(Color.FromArgb(255, 245, 204)))
+                                    g.FillRectangle(b, e2.Bounds);
+                                using (var p = new Pen(Color.FromArgb(242, 202, 88)))
+                                    g.DrawRectangle(p, e2.Bounds.X, e2.Bounds.Y, e2.Bounds.Width - 1, e2.Bounds.Height - 1);
+                            }
+                            else
+                            {
+                                using (var b = new SolidBrush(lst.BackColor))
+                                    g.FillRectangle(b, e2.Bounds);
+                            }
+
+                            int iy = e2.Bounds.Y + (e2.Bounds.Height - 18) / 2;
+                            drawPersonIcon(g, e2.Bounds.X + 3, iy);
+
+                            string nm = "";
+                            if (lst.Items[e2.Index] is System.Collections.Generic.KeyValuePair<string, string> kvp) {
+                                nm = kvp.Value;
+                            }
+                            var tr = new Rectangle(e2.Bounds.X + 24, e2.Bounds.Y,
+                                e2.Bounds.Width - 26, e2.Bounds.Height);
+                            TextRenderer.DrawText(g, nm, lst.Font, tr,
+                                SystemColors.WindowText,
+                                TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.SingleLine);
+                        };
+
+                        Panel pnlActions = new Panel
+                        {
+                            Dock = DockStyle.Bottom,
+                            Height = 28,
+                            BackColor = Color.White
+                        };
+
+                        Action<Button, string> styleBtn = (btn, text) => {
+                            btn.Text = text;
+                            btn.FlatStyle = FlatStyle.Flat;
+                            btn.BackColor = Color.White;
+                            btn.ForeColor = Color.Black;
+                            btn.Font = new Font(lueNV.Font.FontFamily, 8, FontStyle.Regular);
+                            btn.FlatAppearance.BorderSize = 0;
+                            btn.Cursor = Cursors.Hand;
+                            btn.Paint += (sb, eb) => {
+                                eb.Graphics.DrawLine(SystemPens.ControlDark, 0, 0, btn.Width, 0);
+                                if (text != "Danh mục")
+                                    eb.Graphics.DrawLine(SystemPens.ControlDark, btn.Width - 1, 0, btn.Width - 1, btn.Height);
+                                
+                                eb.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                                if (text.Contains("Thêm")) {
+                                    using (var p = new Pen(Color.FromArgb(60, 160, 60), 2.5f)) {
+                                        eb.Graphics.DrawLine(p, btn.Width/2 - 20, btn.Height/2, btn.Width/2 - 12, btn.Height/2);
+                                        eb.Graphics.DrawLine(p, btn.Width/2 - 16, btn.Height/2 - 4, btn.Width/2 - 16, btn.Height/2 + 4);
+                                    }
+                                } else if (text.Contains("Tải")) {
+                                    using (var p = new Pen(Color.FromArgb(40, 100, 200), 1.5f)) {
+                                        eb.Graphics.DrawArc(p, btn.Width/2 - 18, btn.Height/2 - 4, 8, 8, 45, 270);
+                                        eb.Graphics.DrawLine(p, btn.Width/2 - 13, btn.Height/2 - 4, btn.Width/2 - 10, btn.Height/2 - 4);
+                                        eb.Graphics.DrawLine(p, btn.Width/2 - 10, btn.Height/2 - 4, btn.Width/2 - 10, btn.Height/2 - 1);
+                                    }
+                                }
+                            };
+                        };
+
+                        int bw3 = w / 3;
+                        Button b1 = new Button { Location = new Point(0, 0), Size = new Size(bw3, 28) };
+                        Button b2 = new Button { Location = new Point(bw3, 0), Size = new Size(bw3, 28) };
+                        Button b3 = new Button { Location = new Point(bw3*2, 0), Size = new Size(w - bw3*2, 28) };
+                        styleBtn(b1, "Thêm");
+                        styleBtn(b2, "Tải");
+                        styleBtn(b3, "Danh mục");
+                        
+                        b1.Click += (s2, e2) =>
+                        {
+                            dropDown.Close();
+                            using (var f = new QuanLyNhaHang.Forms.FormNhanVienEdit(GetConnectionString()))
+                            {
+                                f.ShowDialog(wrapper);
+                                if (f.Saved) { loadNVData(); bindList(); }
+                            }
+                        };
+                        b2.Click += (s2, e2) => { loadNVData(); bindList(); };
+                        b3.Click += (s2, e2) => { dropDown.Close(); ShowDynamicDataEntryForm("Nhân viên", "DNHANVIEN"); };
+                        pnlActions.Controls.AddRange(new Control[] { b1, b2, b3 });
+
+                        Panel dropContainer = new Panel
+                        {
+                            Width = w - 2,
+                            Height = lst.Height + pnlActions.Height + 2,
+                            BackColor = Color.White,
+                            BorderStyle = BorderStyle.FixedSingle
+                        };
+                        dropContainer.Controls.Add(lst);
+                        dropContainer.Controls.Add(pnlActions);
+                        
+                        ToolStripControlHost dropHost = new ToolStripControlHost(dropContainer) { AutoSize = false, Size = dropContainer.Size, Margin = Padding.Empty, Padding = Padding.Empty };
+                        dropDown.Items.Add(dropHost);
+
+                        EventHandler showDrop = (s2, e2) => { dropDown.Show(fakeCombo, new Point(0, fakeCombo.Height)); };
+                        fakeCombo.Click += showDrop;
+                        lblText.Click += showDrop;
+
+                        lst.SelectedIndexChanged += (s2, e2) =>
+                        {
+                            try
+                            {
+                                if (lst.SelectedIndex < 0) return;
+                                string nm = "";
+                                string id = "";
+                                if (lst.SelectedItem is System.Collections.Generic.KeyValuePair<string, string> kvp) {
+                                    id = kvp.Key;
+                                    nm = kvp.Value;
+                                }
+                                lblText.Text = nm;
+                                fakeCombo.Invalidate(); // redraw icon
+                                var evProp = lueNV.GetType().GetProperty("EditValue");
+                                if (evProp != null && evProp.CanWrite && !string.IsNullOrEmpty(id))
+                                    evProp.SetValue(lueNV, id, null);
+                            }
+                            catch { }
+                        };
+                        lst.Click += (s2, e2) => { dropDown.Close(); };
+
+                        // Set initial selection
+                        if (lst.Items.Count > 0)
+                        {
+                            lst.SelectedIndex = 0;
+                        }
+
+                        // Sync editValue changes from original control to our fake combo
+                        var evChangedEvt = lueNV.GetType().GetEvent("EditValueChanged");
+                        if (evChangedEvt != null)
+                        {
+                            EventHandler onEvChanged = (s2, e2) =>
+                            {
+                                try
+                                {
+                                    var evProp = lueNV.GetType().GetProperty("EditValue");
+                                    if (evProp != null)
+                                    {
+                                        object val = evProp.GetValue(lueNV, null);
+                                        if (val != null) lst.SelectedValue = val;
+                                    }
+                                }
+                                catch { }
+                            };
+                            evChangedEvt.AddEventHandler(lueNV, onEvChanged);
+                        }
+
+                        // Collapse original, add our controls
+                        lueNV.Size = new Size(lueNV.Width, 0);
+                        lueNV.SendToBack();
+
+                        lueParent.SuspendLayout();
+                        lueParent.Controls.Add(fakeCombo);
+                        fakeCombo.BringToFront();
+                        lueParent.ResumeLayout(true);
+
+                        // Fix for Nhóm người dùng (lueSGROUPUSERID) - using custom fake combo with buttons
+                        Control lueGroup = FindControlRecursive(form, "lueSGROUPUSERID");
+                        if (lueGroup != null && lueGroup.Parent != null)
+                        {
+                            DataTable groupTable = new DataTable();
+                            Action loadGroupData = () => {
+                                try {
+                                    using (FbConnection conn = new FbConnection(GetConnectionString())) {
+                                        conn.Open();
+                                        using (FbDataAdapter da = new FbDataAdapter("SELECT ID, NAME FROM SGROUPUSER ORDER BY NAME", conn)) {
+                                            groupTable.Clear();
+                                            da.Fill(groupTable);
+                                        }
+                                    }
+                                } catch { }
+                            };
+                            loadGroupData();
+
+                            Control lueGParent = lueGroup.Parent;
+                            Point locG = lueGroup.Location;
+                            int wG = lueGroup.Width;
+
+                            Panel fakeComboGroup = new Panel {
+                                Name = "fakeComboGroup", Location = locG, Size = new Size(wG, 23),
+                                BackColor = Color.White, Cursor = Cursors.Hand
+                            };
+                            
+                            Label lblTextGroup = new Label {
+                                Location = new Point(24, 2), Size = new Size(wG - 44, 18),
+                                Text = "", TextAlign = ContentAlignment.MiddleLeft, BackColor = Color.Transparent, Cursor = Cursors.Hand
+                            };
+                            fakeComboGroup.Controls.Add(lblTextGroup);
+
+                            ToolStripDropDown dropDownGroup = new ToolStripDropDown { AutoSize = true, Margin = Padding.Empty, Padding = Padding.Empty };
+                            ListBox lstGroup = new ListBox {
+                                Dock = DockStyle.Top, Height = 100, BorderStyle = BorderStyle.None,
+                                DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 22
+                            };
+
+                            Action bindGroupList = () => {
+                                lstGroup.Items.Clear();
+                                foreach (System.Data.DataRow r in groupTable.Rows) {
+                                    lstGroup.Items.Add(new System.Collections.Generic.KeyValuePair<string, string>(r["ID"].ToString(), r["NAME"].ToString()));
+                                }
+                            };
+                            bindGroupList();
+
+                            Action<Graphics, int, int> drawGroupIcon = (g2, px, py) => {
+                                g2.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                                using (var b = new SolidBrush(Color.FromArgb(210, 150, 40))) {
+                                    g2.FillEllipse(b, px + 5, py + 1, 6, 6);
+                                    var rgn = new System.Drawing.Region(new RectangleF(px + 4, py + 7, 10, 6));
+                                    g2.SetClip(rgn, System.Drawing.Drawing2D.CombineMode.Replace);
+                                    g2.FillEllipse(b, px + 2, py + 6, 12, 10);
+                                    g2.ResetClip();
+                                }
+                            };
+
+                            fakeComboGroup.Paint += (s2, e2) => {
+                                ControlPaint.DrawComboButton(e2.Graphics, new Rectangle(fakeComboGroup.Width - 17, 1, 16, fakeComboGroup.Height - 2), ButtonState.Normal);
+                                using (var p = new Pen(Color.FromArgb(171, 193, 222)))
+                                    e2.Graphics.DrawRectangle(p, 0, 0, fakeComboGroup.Width - 1, fakeComboGroup.Height - 1);
+                                if (lstGroup.SelectedIndex >= 0) drawGroupIcon(e2.Graphics, 3, 3);
+                            };
+
+                            lstGroup.DrawItem += (s2, e2) => {
+                                if (e2.Index < 0) return;
+                                Graphics g = e2.Graphics;
+                                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+                                bool sel = (e2.State & DrawItemState.Selected) != 0;
+                                if (sel) {
+                                    using (var b = new SolidBrush(Color.FromArgb(255, 245, 204)))
+                                        g.FillRectangle(b, e2.Bounds);
+                                    using (var p = new Pen(Color.FromArgb(242, 202, 88)))
+                                        g.DrawRectangle(p, e2.Bounds.X, e2.Bounds.Y, e2.Bounds.Width - 1, e2.Bounds.Height - 1);
+                                } else {
+                                    using (var b = new SolidBrush(lstGroup.BackColor))
+                                        g.FillRectangle(b, e2.Bounds);
+                                }
+                                int iy = e2.Bounds.Y + (e2.Bounds.Height - 18) / 2;
+                                drawGroupIcon(g, e2.Bounds.X + 3, iy);
+                                string nm = "";
+                                if (lstGroup.Items[e2.Index] is System.Collections.Generic.KeyValuePair<string, string> kvp) nm = kvp.Value;
+                                var tr = new Rectangle(e2.Bounds.X + 24, e2.Bounds.Y, e2.Bounds.Width - 26, e2.Bounds.Height);
+                                TextRenderer.DrawText(g, nm, lstGroup.Font, tr, SystemColors.WindowText, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.SingleLine);
+                            };
+
+                            Panel pnlActionsGroup = new Panel { Dock = DockStyle.Bottom, Height = 28, BackColor = Color.White };
+                            int bwG3 = wG / 3;
+                            Button bg1 = new Button { Location = new Point(0, 0), Size = new Size(bwG3, 28) };
+                            Button bg2 = new Button { Location = new Point(bwG3, 0), Size = new Size(bwG3, 28) };
+                            Button bg3 = new Button { Location = new Point(bwG3*2, 0), Size = new Size(wG - bwG3*2, 28) };
+                            styleBtn(bg1, "Thêm"); styleBtn(bg2, "Tải"); styleBtn(bg3, "Danh mục");
+                            
+                            bg1.Click += (s2, e2) => {
+                                dropDownGroup.Close();
+                                using (var f = new QuanLyNhaHang.Forms.FormGroupUser()) {
+                                    if (f.ShowDialog(wrapper) == DialogResult.OK) { loadGroupData(); bindGroupList(); }
+                                }
+                            };
+                            bg2.Click += (s2, e2) => { loadGroupData(); bindGroupList(); };
+                            bg3.Click += (s2, e2) => { dropDownGroup.Close(); };
+                            pnlActionsGroup.Controls.AddRange(new Control[] { bg1, bg2, bg3 });
+
+                            Panel dropContainerG = new Panel {
+                                Width = wG - 2, Height = lstGroup.Height + pnlActionsGroup.Height + 2,
+                                BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle
+                            };
+                            dropContainerG.Controls.Add(lstGroup);
+                            dropContainerG.Controls.Add(pnlActionsGroup);
+                            
+                            ToolStripControlHost dropHostG = new ToolStripControlHost(dropContainerG) { AutoSize = false, Size = dropContainerG.Size, Margin = Padding.Empty, Padding = Padding.Empty };
+                            dropDownGroup.Items.Add(dropHostG);
+
+                            EventHandler showDropG = (s2, e2) => { dropDownGroup.Show(fakeComboGroup, new Point(0, fakeComboGroup.Height)); };
+                            fakeComboGroup.Click += showDropG;
+                            lblTextGroup.Click += showDropG;
+
+                            lstGroup.SelectedIndexChanged += (s2, e2) => {
+                                try {
+                                    if (lstGroup.SelectedIndex < 0) return;
+                                    string nm = ""; string id = "";
+                                    if (lstGroup.SelectedItem is System.Collections.Generic.KeyValuePair<string, string> kvp) {
+                                        id = kvp.Key; nm = kvp.Value;
+                                    }
+                                    lblTextGroup.Text = nm;
+                                    fakeComboGroup.Invalidate();
+                                    var evProp = lueGroup.GetType().GetProperty("EditValue");
+                                    if (evProp != null && evProp.CanWrite && !string.IsNullOrEmpty(id))
+                                        evProp.SetValue(lueGroup, id, null);
+                                } catch { }
+                            };
+                            lstGroup.Click += (s2, e2) => { dropDownGroup.Close(); };
+
+                            if (lstGroup.Items.Count > 0) lstGroup.SelectedIndex = 0;
+
+                            var evGrpEvt = lueGroup.GetType().GetEvent("EditValueChanged");
+                            if (evGrpEvt != null) {
+                                EventHandler onGrpEvChanged = (s2, e2) => {
+                                    try {
+                                        var evProp = lueGroup.GetType().GetProperty("EditValue");
+                                        if (evProp != null) {
+                                            object val = evProp.GetValue(lueGroup, null);
+                                            if (val != null) {
+                                                for (int i = 0; i < lstGroup.Items.Count; i++) {
+                                                    if (lstGroup.Items[i] is System.Collections.Generic.KeyValuePair<string, string> kv && kv.Key == val.ToString()) {
+                                                        lstGroup.SelectedIndex = i;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } catch { }
+                                };
+                                evGrpEvt.AddEventHandler(lueGroup, onGrpEvChanged);
+                            }
+
+                            Control lgParent = lueGroup.Parent;
+                            lueGroup.Size = new Size(lueGroup.Width, 0);
+                            lueGroup.SendToBack();
+                            lgParent.SuspendLayout();
+                            lgParent.Controls.Add(fakeComboGroup);
+                            fakeComboGroup.BringToFront();
+                            lgParent.ResumeLayout(true);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine("InjectShown err: " + ex.Message + "\n" + ex.StackTrace);
+                    }
+                };
+
+
+                // Configure grid for Cửa hàng
+                Control grCtrl = FindControlRecursive(form, "grMain");
+                if (grCtrl is DataGridView dgv)
+                {
+                    dgv.Columns.Clear();
+                    dgv.AllowUserToAddRows = false;
+                    dgv.AllowUserToDeleteRows = false;
+                    dgv.RowHeadersVisible = false;
+                    dgv.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+                    dgv.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+
+                    dgv.Columns.Add("CuaHangId", "ID");
+                    dgv.Columns["CuaHangId"].Visible = false;
+                    dgv.Columns.Add("CuaHang", "Cửa hàng");
+                    dgv.Columns["CuaHang"].ReadOnly = true;
+                    dgv.Columns["CuaHang"].FillWeight = 70;
+                    var colCheck = new DataGridViewCheckBoxColumn { Name = "TruyCap", HeaderText = "Truy cập", Width = 70, AutoSizeMode = DataGridViewAutoSizeColumnMode.None };
+                    colCheck.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+                    colCheck.HeaderCell.Style.Alignment = DataGridViewContentAlignment.MiddleCenter;
+                    dgv.Columns.Add(colCheck);
+
+                    // Load DCUAHANG data
+                    try
+                    {
+                        using (FbConnection conn = new FbConnection(GetConnectionString()))
+                        {
+                            conn.Open();
+                            using (FbCommand cmd = new FbCommand("SELECT ID, NAME FROM DCUAHANG ORDER BY NAME", conn))
+                            using (FbDataReader rdr = cmd.ExecuteReader())
+                            {
+                                while (rdr.Read())
+                                {
+                                    string chId = rdr["ID"]?.ToString() ?? "";
+                                    string chName = rdr["NAME"]?.ToString() ?? chId;
+                                    dgv.Rows.Add(chId, chName, false);
+                                }
+                            }
+                        }
+                    } catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("InjectTaiKhoanNguoiDungUI error: " + ex.Message);
+            }
+        }
+
+        private static void LoadSuserDataToForm(Control form, string userId)
+        {
+            try
+            {
+                using (FbConnection conn = new FbConnection(GetConnectionString()))
+                {
+                    conn.Open();
+
+                    // Load SUSER record
+                    using (FbCommand cmd = new FbCommand("SELECT * FROM SUSER WHERE ID = @id", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@id", userId);
+                        using (FbDataReader reader = cmd.ExecuteReader())
+                        {
+                            if (reader.Read())
+                            {
+                                // Set text fields
+                                SetControlTextByName(form, "txtNAME", reader["NAME"]?.ToString() ?? "");
+                                SetControlTextByName(form, "txtUSERNAME", reader["USERNAME"]?.ToString() ?? "");
+                                SetControlTextByName(form, "txtPASSWORD", reader["PASSWORD"]?.ToString() ?? "");
+                                SetControlTextByName(form, "txtEMAIL", reader["EMAIL"]?.ToString() ?? "");
+                                SetControlTextByName(form, "txtUSERID", reader["USERID"]?.ToString() ?? "");
+                                SetControlTextByName(form, "txtCARDCODE", reader["CARDCODE"]?.ToString() ?? "");
+
+                                // Set LookUpEdits
+                                string dnhanvienId = reader["DNHANVIENID"]?.ToString() ?? "";
+                                string sgroupuserId = reader["SGROUPUSERID"]?.ToString() ?? "";
+
+                                Control lueNV = FindControlRecursive(form, "lueDNHANVIENID");
+                                if (lueNV != null && !string.IsNullOrEmpty(dnhanvienId))
+                                {
+                                    try {
+                                        var props = lueNV.GetType().GetProperty("EditValue") ?? lueNV.GetType().GetProperty("SelectedValue");
+                                        props?.SetValue(lueNV, dnhanvienId);
+                                    } catch { }
+                                }
+
+                                Control lueGroup = FindControlRecursive(form, "lueSGROUPUSERID");
+                                if (lueGroup != null && !string.IsNullOrEmpty(sgroupuserId))
+                                {
+                                    try {
+                                        var props = lueGroup.GetType().GetProperty("EditValue") ?? lueGroup.GetType().GetProperty("SelectedValue");
+                                        props?.SetValue(lueGroup, sgroupuserId);
+                                    } catch { }
+                                }
+                            }
+                        }
+                    }
+
+                    // Load TNGUOIDUNGTHEOCUAHANG
+                    Control grCtrl = FindControlRecursive(form, "grMain");
+                    if (grCtrl is DataGridView dgv)
+                    {
+                        HashSet<string> accessCuaHangIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        try
+                        {
+                            using (FbCommand cmd = new FbCommand("SELECT DCUAHANGID FROM TNGUOIDUNGTHEOCUAHANG WHERE SUSERID = @uid", conn))
+                            {
+                                cmd.Parameters.AddWithValue("@uid", userId);
+                                using (FbDataReader rdr = cmd.ExecuteReader())
+                                {
+                                    while (rdr.Read())
+                                    {
+                                        string chId = rdr["DCUAHANGID"]?.ToString() ?? "";
+                                        if (!string.IsNullOrEmpty(chId)) accessCuaHangIds.Add(chId);
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+
+                        foreach (DataGridViewRow row in dgv.Rows)
+                        {
+                            string cuaHangId = row.Cells["CuaHangId"]?.Value?.ToString() ?? "";
+                            if (accessCuaHangIds.Contains(cuaHangId))
+                            {
+                                row.Cells["TruyCap"].Value = true;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("LoadSuserDataToForm error: " + ex.Message);
+            }
+        }
+
+        private static bool SaveSuserDataFromForm(Control form, string[] idHolder)
+        {
+            try
+            {
+                string idValue = idHolder[0];
+
+                string name = GetControlTextByName(form, "txtNAME");
+                string username = GetControlTextByName(form, "txtUSERNAME");
+                string password = GetControlTextByName(form, "txtPASSWORD");
+                string email = GetControlTextByName(form, "txtEMAIL");
+                string userId = GetControlTextByName(form, "txtUSERID");
+                string cardCode = GetControlTextByName(form, "txtCARDCODE");
+
+                if (string.IsNullOrWhiteSpace(username))
+                {
+                    MessageBox.Show("Vui lòng nhập tài khoản!", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return false;
+                }
+
+                // Extract LookUpEdit values
+                string dnhanvienId = null;
+                Control lueNV = FindControlRecursive(form, "lueDNHANVIENID");
+                if (lueNV != null)
+                {
+                    try {
+                        var props = lueNV.GetType().GetProperty("EditValue") ?? lueNV.GetType().GetProperty("SelectedValue");
+                        var val = props?.GetValue(lueNV);
+                        if (val != null && val != DBNull.Value) dnhanvienId = val.ToString();
+                    } catch { }
+                }
+
+                string sgroupuserId = null;
+                Control lueGroup = FindControlRecursive(form, "lueSGROUPUSERID");
+                if (lueGroup != null)
+                {
+                    try {
+                        var props = lueGroup.GetType().GetProperty("EditValue") ?? lueGroup.GetType().GetProperty("SelectedValue");
+                        var val = props?.GetValue(lueGroup);
+                        if (val != null && val != DBNull.Value) sgroupuserId = val.ToString();
+                    } catch { }
+                }
+
+                using (FbConnection conn = new FbConnection(GetConnectionString()))
+                {
+                    conn.Open();
+                    using (var trans = conn.BeginTransaction())
+                    {
+                        try
+                        {
+                            if (string.IsNullOrEmpty(idValue))
+                            {
+                                // INSERT
+                                idValue = Guid.NewGuid().ToString();
+                                idHolder[0] = idValue;
+                                string sql = @"INSERT INTO SUSER (ID, USERNAME, PASSWORD, NAME, EMAIL, SGROUPUSERID, DNHANVIENID, USERID, CARDCODE, STATUS, USERCREATEDID) 
+                                               VALUES (@id, @username, @password, @name, @email, @sgroupuserid, @dnhanvienid, @userid, @cardcode, 1, @usercreatedid)";
+                                using (FbCommand cmd = new FbCommand(sql, conn, trans))
+                                {
+                                    cmd.Parameters.AddWithValue("@id", idValue);
+                                    cmd.Parameters.AddWithValue("@username", username);
+                                    cmd.Parameters.AddWithValue("@password", (object)password ?? DBNull.Value);
+                                    cmd.Parameters.AddWithValue("@name", (object)name ?? DBNull.Value);
+                                    cmd.Parameters.AddWithValue("@email", (object)email ?? DBNull.Value);
+                                    cmd.Parameters.AddWithValue("@sgroupuserid", (object)sgroupuserId ?? DBNull.Value);
+                                    cmd.Parameters.AddWithValue("@dnhanvienid", (object)dnhanvienId ?? DBNull.Value);
+                                    cmd.Parameters.AddWithValue("@userid", (object)userId ?? DBNull.Value);
+                                    cmd.Parameters.AddWithValue("@cardcode", (object)cardCode ?? DBNull.Value);
+                                    cmd.Parameters.AddWithValue("@usercreatedid", "4f1466a0-0756-4ba9-afa8-053b96ca7569");
+                                    cmd.ExecuteNonQuery();
+                                }
+                            }
+                            else
+                            {
+                                // UPDATE
+                                string sql = @"UPDATE SUSER SET USERNAME=@username, PASSWORD=@password, NAME=@name, EMAIL=@email, 
+                                               SGROUPUSERID=@sgroupuserid, DNHANVIENID=@dnhanvienid, USERID=@userid, CARDCODE=@cardcode 
+                                               WHERE ID=@id";
+                                using (FbCommand cmd = new FbCommand(sql, conn, trans))
+                                {
+                                    cmd.Parameters.AddWithValue("@username", username);
+                                    cmd.Parameters.AddWithValue("@password", (object)password ?? DBNull.Value);
+                                    cmd.Parameters.AddWithValue("@name", (object)name ?? DBNull.Value);
+                                    cmd.Parameters.AddWithValue("@email", (object)email ?? DBNull.Value);
+                                    cmd.Parameters.AddWithValue("@sgroupuserid", (object)sgroupuserId ?? DBNull.Value);
+                                    cmd.Parameters.AddWithValue("@dnhanvienid", (object)dnhanvienId ?? DBNull.Value);
+                                    cmd.Parameters.AddWithValue("@userid", (object)userId ?? DBNull.Value);
+                                    cmd.Parameters.AddWithValue("@cardcode", (object)cardCode ?? DBNull.Value);
+                                    cmd.Parameters.AddWithValue("@id", idValue);
+                                    cmd.ExecuteNonQuery();
+                                }
+                            }
+
+                            // Save TNGUOIDUNGTHEOCUAHANG (cửa hàng truy cập)
+                            try
+                            {
+                                // Delete existing
+                                using (FbCommand delCmd = new FbCommand("DELETE FROM TNGUOIDUNGTHEOCUAHANG WHERE SUSERID = @uid", conn, trans))
+                                {
+                                    delCmd.Parameters.AddWithValue("@uid", idValue);
+                                    delCmd.ExecuteNonQuery();
+                                }
+
+                                // Insert checked items
+                                Control grCtrl = FindControlRecursive(form, "grMain");
+                                if (grCtrl is DataGridView dgv)
+                                {
+                                    foreach (DataGridViewRow row in dgv.Rows)
+                                    {
+                                        bool isChecked = false;
+                                        try { isChecked = Convert.ToBoolean(row.Cells["TruyCap"].Value); } catch { }
+
+                                        if (isChecked)
+                                        {
+                                            string cuaHangId = row.Cells["CuaHangId"]?.Value?.ToString() ?? "";
+                                            if (!string.IsNullOrEmpty(cuaHangId))
+                                            {
+                                                string insSql = "INSERT INTO TNGUOIDUNGTHEOCUAHANG (ID, SUSERID, DCUAHANGID) VALUES (@tid, @uid, @chid)";
+                                                using (FbCommand insCmd = new FbCommand(insSql, conn, trans))
+                                                {
+                                                    insCmd.Parameters.AddWithValue("@tid", Guid.NewGuid().ToString());
+                                                    insCmd.Parameters.AddWithValue("@uid", idValue);
+                                                    insCmd.Parameters.AddWithValue("@chid", cuaHangId);
+                                                    insCmd.ExecuteNonQuery();
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            catch { /* TNGUOIDUNGTHEOCUAHANG might not exist */ }
+
+                            trans.Commit();
+                            return true;
+                        }
+                        catch
+                        {
+                            trans.Rollback();
+                            throw;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Lỗi lưu tài khoản: " + ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+        }
+
+        private static void LoadNo1LookupEdit(Control c, string tableName)
+        {
+            try {
+                var loadMethod = c.GetType().GetMethod("LoadData", new Type[] { typeof(string) });
+                if (loadMethod != null) {
+                    loadMethod.Invoke(c, new object[] { tableName });
+                }
+            } catch (Exception ex) {
+                // LoadData requires STABLETABLEDESC config set by No1Lib - silently skip if not available
+                System.Diagnostics.Debug.WriteLine("LoadNo1LookupEdit skipped for " + c.Name + ": " + ex.Message);
             }
         }
 
@@ -146,28 +924,10 @@ namespace QuanLyNhaHang.Services
         {
             foreach (Control c in parent.Controls)
             {
-                if (c.Name == "lueSGROUPUSERID")
-                {
-                    DataTable dt = new DataTable();
-                    using (FbConnection conn = new FbConnection(GetConnectionString()))
-                    {
-                        conn.Open();
-                        using (FbDataAdapter da = new FbDataAdapter("SELECT ID, NAME FROM SGROUPUSER", conn)) { da.Fill(dt); }
-                    }
-                    BindLookupEdit(c, dt, "NAME", "ID");
-                }
-                else if (c.Name == "lueDNHANVIENID")
-                {
-                    DataTable dt = new DataTable();
-                    using (FbConnection conn = new FbConnection(GetConnectionString()))
-                    {
-                        conn.Open();
-                        try {
-                            using (FbDataAdapter da = new FbDataAdapter("SELECT ID, NAME FROM DNHANVIEN", conn)) { da.Fill(dt); }
-                        } catch { } // Ignore if DNHANVIEN doesn't exist
-                    }
-                    BindLookupEdit(c, dt, "NAME", "ID");
-                }
+                // Note: lueDNHANVIENID and lueSGROUPUSERID are No1LookupEdit controls
+                // that require STABLETABLEDESC config from No1Lib.
+                // For TaiKhoanNguoiDung, they are replaced by ComboBox in InjectTaiKhoanNguoiDungUI.
+                // We skip them here to avoid errors.
                 
                 if (c.Controls.Count > 0)
                 {
@@ -176,24 +936,88 @@ namespace QuanLyNhaHang.Services
             }
         }
 
+        private static void ForceSetProperty(object obj, string propertyName, object value)
+        {
+            var type = obj.GetType();
+            while (type != null)
+            {
+                var prop = type.GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+                if (prop != null && prop.CanWrite)
+                {
+                    prop.SetValue(obj, value, null);
+                    return;
+                }
+                type = type.BaseType;
+            }
+            throw new Exception("Writable property " + propertyName + " not found in class hierarchy of " + obj.GetType().FullName);
+        }
+
         private static void BindLookupEdit(Control control, DataTable dt, string displayMember, string valueMember)
         {
             try {
+                // If it's a No1LookupEdit, use its native LoadData method
+                var loadMethod = control.GetType().GetMethod("LoadData", new Type[] { typeof(string) });
+                if (loadMethod != null)
+                {
+                    // No1LookupEdit has its own data loading - use table name from the DataTable
+                    // We cannot force a DataTable into it, so skip binding
+                    return;
+                }
+                
                 var props = control.GetType().GetProperty("Properties");
                 if (props != null)
                 {
                     var propsObj = props.GetValue(control);
-                    propsObj.GetType().GetProperty("DataSource")?.SetValue(propsObj, dt);
-                    propsObj.GetType().GetProperty("DisplayMember")?.SetValue(propsObj, displayMember);
-                    propsObj.GetType().GetProperty("ValueMember")?.SetValue(propsObj, valueMember);
+                    
+                    try {
+                        ForceSetProperty(propsObj, "DataSource", dt);
+                        ForceSetProperty(propsObj, "DisplayMember", displayMember);
+                        ForceSetProperty(propsObj, "ValueMember", valueMember);
+                        
+                        var forceInitMethod = control.GetType().GetMethod("ForceInitialize");
+                        forceInitMethod?.Invoke(control, null);
+                        
+                        var populateMethod = propsObj.GetType().GetMethod("PopulateColumns");
+                        populateMethod?.Invoke(propsObj, null);
+                    } catch (Exception ex) {
+                        if (control.Name == "lueDNHANVIENID") {
+                            try { MessageBox.Show("ForceSetProperty failed: " + ex.Message, "Debug Exception"); } catch { }
+                        }
+                        try {
+                            // Fallback for ComboBoxEdit / ImageComboBoxEdit which don't have DataSource
+                            var itemsProp = propsObj.GetType().GetProperty("Items");
+                            if (itemsProp != null)
+                            {
+                                var itemsObj = itemsProp.GetValue(propsObj);
+                                itemsObj.GetType().GetMethod("Clear")?.Invoke(itemsObj, null);
+                                var addMethod = itemsObj.GetType().GetMethod("Add", new Type[] { typeof(object) });
+                                if (addMethod != null) {
+                                    foreach (DataRow row in dt.Rows) {
+                                        addMethod.Invoke(itemsObj, new object[] { row[displayMember].ToString() });
+                                    }
+                                }
+                            }
+                        } catch (Exception exFallback) { 
+                            if (control.Name == "lueDNHANVIENID") {
+                                try { MessageBox.Show("Fallback failed: " + exFallback.Message, "Debug Exception"); } catch { }
+                            }
+                        }
+                    }
                 }
                 else
                 {
-                    control.GetType().GetProperty("DataSource")?.SetValue(control, dt);
-                    control.GetType().GetProperty("DisplayMember")?.SetValue(control, displayMember);
-                    control.GetType().GetProperty("ValueMember")?.SetValue(control, valueMember);
+                    try {
+                        ForceSetProperty(control, "DataSource", dt);
+                        ForceSetProperty(control, "DisplayMember", displayMember);
+                        ForceSetProperty(control, "ValueMember", valueMember);
+                    } catch { }
                 }
-            } catch { }
+            } catch (Exception ex) {
+                if (control.Name == "lueDNHANVIENID")
+                {
+                    MessageBox.Show("Lỗi tải danh sách nhân viên: " + ex.Message, "Debug");
+                }
+            }
         }
 
         private static void LoadDataToForm(Control form, string tableName, string idValue)
@@ -2763,6 +3587,59 @@ namespace QuanLyNhaHang.Services
                 childContainer.Dock = DockStyle.Fill;
                 page.Controls.Add(childContainer);
                 tc.TabPages.Add(page);
+            }
+        }
+
+
+
+        private static string GetControlTextByName(Control parent, string ctrlName)
+        {
+            Control c = FindControlRecursive(parent, ctrlName);
+            if (c == null) return "";
+            if (c.GetType().Name.Contains("LookUpEdit") || c.GetType().Name.Contains("ComboBox"))
+            {
+                var val = c.GetType().GetProperty("EditValue")?.GetValue(c) ?? c.GetType().GetProperty("SelectedValue")?.GetValue(c);
+                return val?.ToString() ?? "";
+            }
+            return c.Text;
+        }
+
+        private static void SetControlTextByName(Control parent, string ctrlName, string text)
+        {
+            Control c = FindControlRecursive(parent, ctrlName);
+            if (c != null)
+            {
+                if (c.GetType().Name.Contains("LookUpEdit") || c.GetType().Name.Contains("ComboBox"))
+                {
+                    try {
+                        var props = c.GetType().GetProperty("EditValue") ?? c.GetType().GetProperty("SelectedValue");
+                        props?.SetValue(c, text);
+                    } catch { }
+                }
+                else
+                {
+                    c.Text = text;
+                }
+            }
+        }
+
+        private static void ClearFormFields(Control parent)
+        {
+            foreach (Control c in parent.Controls)
+            {
+                if (c is TextBox tb) tb.Clear();
+                else if (c is ComboBox cb) cb.SelectedIndex = -1;
+                else if (c is CheckBox chk) chk.Checked = false;
+                else if (c is DateTimePicker dtp) dtp.Value = DateTime.Now;
+                else if (c.GetType().Name.Contains("LookUpEdit"))
+                {
+                    try { c.GetType().GetProperty("EditValue")?.SetValue(c, null); } catch { }
+                }
+                
+                if (c.Controls.Count > 0)
+                {
+                    ClearFormFields(c);
+                }
             }
         }
 
