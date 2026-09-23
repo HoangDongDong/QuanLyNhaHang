@@ -104,14 +104,14 @@ namespace QuanLyNhaHang.Forms
             rdoLuongThangNgay.CheckedChanged += SyncSalaryControls;
 
             // ── Footer ───────────────────────────────────────────────────
-            var footer = new Panel { Dock = DockStyle.Bottom, Height = 48, BackColor = Color.FromArgb(212, 222, 238) };
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = 48, BackColor = Color.White };
             Controls.Add(footer);
 
-            int bx = 10, by2 = 8, bh = 32;
-            var btnLuu      = Btn("🖫 Lưu",      bx,        by2, 90,  bh, Color.FromArgb(70, 120, 195)); footer.Controls.Add(btnLuu);
-            var btnLuuMoi   = Btn("Lưu & Mới",   bx += 94,  by2, 95,  bh); footer.Controls.Add(btnLuuMoi);
-            var btnLuuThoat = Btn("Lưu & thoát", bx += 99,  by2, 105, bh); footer.Controls.Add(btnLuuThoat);
-            var btnThoat    = Btn("Thoát",        bx += 112, by2, 75,  bh, Color.FromArgb(185, 70, 55)); footer.Controls.Add(btnThoat);
+            int bx = 110, by2 = 8, bh = 32;
+            var btnLuu      = Btn("Lưu",           bx,        by2, 85,  bh); footer.Controls.Add(btnLuu);
+            var btnLuuMoi   = Btn("Lưu & Mới",     bx += 90,  by2, 95,  bh); footer.Controls.Add(btnLuuMoi);
+            var btnLuuThoat = Btn("Lưu & thoát",   bx += 100, by2, 95,  bh); footer.Controls.Add(btnLuuThoat);
+            var btnThoat    = Btn("Thoát",         bx += 100, by2, 80,  bh); footer.Controls.Add(btnThoat);
 
             btnLuu.Click      += (s, e) => DoSave(false, false);
             btnLuuMoi.Click   += (s, e) => DoSave(false, true);
@@ -158,12 +158,12 @@ namespace QuanLyNhaHang.Forms
                                   (ID, NAME, DIACHI, DIENTHOAI, NOTE,
                                    CACHTINHLUONG, LUONGCA, LUONGTHANG, LUONGTHEOCA,
                                    NGHITHU7, NGHICHUNHAT,
-                                   TIMECREATED, TIMEMODIFIED, STATUS, SORTORDER, ITEMTYPE)
+                                   TIMECREATED, TIMEMODIFIED, STATUS, SORTORDER, ITEMTYPE, USERCREATEDID)
                                 VALUES
                                   (@id, @name, @dc, @dt, @note,
                                    @cach, @lca, @lth, @lca,
                                    @t7, @cn,
-                                   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, @name, 0)";
+                                   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, @name, 0, '1')";
                     }
                     else
                     {
@@ -258,17 +258,14 @@ namespace QuanLyNhaHang.Forms
         private TextBox Txt(int x, int y, int w, string def = "") =>
             new TextBox { Location = new Point(x, y), Size = new Size(w, 22), Text = def, BorderStyle = BorderStyle.FixedSingle };
 
-        private Button Btn(string t, int x, int y, int w, int h, Color? bg = null)
+        private Button Btn(string t, int x, int y, int w, int h)
         {
             var b = new Button
             {
                 Text = t, Location = new Point(x, y), Size = new Size(w, h),
-                FlatStyle = FlatStyle.Flat,
-                BackColor = bg ?? Color.FromArgb(230, 230, 230),
-                ForeColor = bg.HasValue ? Color.White : Color.Black,
+                UseVisualStyleBackColor = true,
                 Cursor = Cursors.Hand
             };
-            b.FlatAppearance.BorderColor = Color.Silver;
             return b;
         }
 

@@ -183,6 +183,7 @@ namespace QuanLyNhaHang.Services
 
                         // Load DNHANVIEN data
                         DataTable nvTable = new DataTable();
+                        System.Collections.Generic.Dictionary<string, Image> nvImageCache = new System.Collections.Generic.Dictionary<string, Image>();
                         Action loadNVData = () =>
                         {
                             try
@@ -191,7 +192,7 @@ namespace QuanLyNhaHang.Services
                                 {
                                     conn.Open();
                                     using (FbDataAdapter da = new FbDataAdapter(
-                                        "SELECT ID, NAME FROM DNHANVIEN ORDER BY NAME", conn))
+                                        "SELECT A.ID, A.NAME, I.IMAGE FROM DNHANVIEN A LEFT JOIN SIMAGE I ON A.SIMAGEID = I.ID ORDER BY A.NAME", conn))
                                     {
                                         nvTable.Clear();
                                         da.Fill(nvTable);
@@ -248,8 +249,20 @@ namespace QuanLyNhaHang.Services
 
                         Action bindList = () => {
                             lst.Items.Clear();
+                            foreach (Image img in nvImageCache.Values) { if (img != null) img.Dispose(); }
+                            nvImageCache.Clear();
+
                             foreach (System.Data.DataRow r in nvTable.Rows) {
-                                lst.Items.Add(new System.Collections.Generic.KeyValuePair<string, string>(r["ID"].ToString(), r["NAME"].ToString()));
+                                string id = r["ID"].ToString();
+                                lst.Items.Add(new System.Collections.Generic.KeyValuePair<string, string>(id, r["NAME"].ToString()));
+                                if (r["IMAGE"] != DBNull.Value) {
+                                    try {
+                                        byte[] bytes = (byte[])r["IMAGE"];
+                                        using (var ms = new System.IO.MemoryStream(bytes)) {
+                                            nvImageCache[id] = Image.FromStream(ms);
+                                        }
+                                    } catch { }
+                                }
                             }
                         };
                         bindList();
@@ -282,8 +295,17 @@ namespace QuanLyNhaHang.Services
                             using (var p = new Pen(Color.FromArgb(171, 193, 222)))
                                 e2.Graphics.DrawRectangle(p, 0, 0, fakeCombo.Width - 1, fakeCombo.Height - 1);
 
-                            if (lst.SelectedIndex >= 0)
-                                drawPersonIcon(e2.Graphics, 3, 3);
+                            if (lst.SelectedIndex >= 0) {
+                                Image icon = null;
+                                if (lst.Items[lst.SelectedIndex] is System.Collections.Generic.KeyValuePair<string, string> kvp) {
+                                    nvImageCache.TryGetValue(kvp.Key, out icon);
+                                }
+                                if (icon != null) {
+                                    e2.Graphics.DrawImage(icon, new Rectangle(3, 3, 16, 16));
+                                } else {
+                                    drawPersonIcon(e2.Graphics, 3, 3);
+                                }
+                            }
                         };
 
                         lst.DrawItem += (s2, e2) =>
@@ -307,12 +329,20 @@ namespace QuanLyNhaHang.Services
                             }
 
                             int iy = e2.Bounds.Y + (e2.Bounds.Height - 18) / 2;
-                            drawPersonIcon(g, e2.Bounds.X + 3, iy);
-
+                            
                             string nm = "";
+                            Image icon = null;
                             if (lst.Items[e2.Index] is System.Collections.Generic.KeyValuePair<string, string> kvp) {
                                 nm = kvp.Value;
+                                nvImageCache.TryGetValue(kvp.Key, out icon);
                             }
+                            
+                            if (icon != null) {
+                                g.DrawImage(icon, new Rectangle(e2.Bounds.X + 3, iy, 16, 16));
+                            } else {
+                                drawPersonIcon(g, e2.Bounds.X + 3, iy);
+                            }
+
                             var tr = new Rectangle(e2.Bounds.X + 24, e2.Bounds.Y,
                                 e2.Bounds.Width - 26, e2.Bounds.Height);
                             TextRenderer.DrawText(g, nm, lst.Font, tr,
@@ -455,11 +485,12 @@ namespace QuanLyNhaHang.Services
                         if (lueGroup != null && lueGroup.Parent != null)
                         {
                             DataTable groupTable = new DataTable();
+                            System.Collections.Generic.Dictionary<string, Image> groupImageCache = new System.Collections.Generic.Dictionary<string, Image>();
                             Action loadGroupData = () => {
                                 try {
                                     using (FbConnection conn = new FbConnection(GetConnectionString())) {
                                         conn.Open();
-                                        using (FbDataAdapter da = new FbDataAdapter("SELECT ID, NAME FROM SGROUPUSER ORDER BY NAME", conn)) {
+                                        using (FbDataAdapter da = new FbDataAdapter("SELECT A.ID, A.NAME, I.IMAGE FROM SGROUPUSER A LEFT JOIN SIMAGE I ON A.SIMAGEID = I.ID ORDER BY A.NAME", conn)) {
                                             groupTable.Clear();
                                             da.Fill(groupTable);
                                         }
@@ -491,8 +522,20 @@ namespace QuanLyNhaHang.Services
 
                             Action bindGroupList = () => {
                                 lstGroup.Items.Clear();
+                                foreach (Image img in groupImageCache.Values) { if (img != null) img.Dispose(); }
+                                groupImageCache.Clear();
+
                                 foreach (System.Data.DataRow r in groupTable.Rows) {
-                                    lstGroup.Items.Add(new System.Collections.Generic.KeyValuePair<string, string>(r["ID"].ToString(), r["NAME"].ToString()));
+                                    string id = r["ID"].ToString();
+                                    lstGroup.Items.Add(new System.Collections.Generic.KeyValuePair<string, string>(id, r["NAME"].ToString()));
+                                    if (r["IMAGE"] != DBNull.Value) {
+                                        try {
+                                            byte[] bytes = (byte[])r["IMAGE"];
+                                            using (var ms = new System.IO.MemoryStream(bytes)) {
+                                                groupImageCache[id] = Image.FromStream(ms);
+                                            }
+                                        } catch { }
+                                    }
                                 }
                             };
                             bindGroupList();
@@ -512,7 +555,17 @@ namespace QuanLyNhaHang.Services
                                 ControlPaint.DrawComboButton(e2.Graphics, new Rectangle(fakeComboGroup.Width - 17, 1, 16, fakeComboGroup.Height - 2), ButtonState.Normal);
                                 using (var p = new Pen(Color.FromArgb(171, 193, 222)))
                                     e2.Graphics.DrawRectangle(p, 0, 0, fakeComboGroup.Width - 1, fakeComboGroup.Height - 1);
-                                if (lstGroup.SelectedIndex >= 0) drawGroupIcon(e2.Graphics, 3, 3);
+                                if (lstGroup.SelectedIndex >= 0) {
+                                    Image icon = null;
+                                    if (lstGroup.Items[lstGroup.SelectedIndex] is System.Collections.Generic.KeyValuePair<string, string> kvp) {
+                                        groupImageCache.TryGetValue(kvp.Key, out icon);
+                                    }
+                                    if (icon != null) {
+                                        e2.Graphics.DrawImage(icon, new Rectangle(3, 3, 16, 16));
+                                    } else {
+                                        drawGroupIcon(e2.Graphics, 3, 3);
+                                    }
+                                }
                             };
 
                             lstGroup.DrawItem += (s2, e2) => {
@@ -530,9 +583,20 @@ namespace QuanLyNhaHang.Services
                                         g.FillRectangle(b, e2.Bounds);
                                 }
                                 int iy = e2.Bounds.Y + (e2.Bounds.Height - 18) / 2;
-                                drawGroupIcon(g, e2.Bounds.X + 3, iy);
+                                
                                 string nm = "";
-                                if (lstGroup.Items[e2.Index] is System.Collections.Generic.KeyValuePair<string, string> kvp) nm = kvp.Value;
+                                Image icon = null;
+                                if (lstGroup.Items[e2.Index] is System.Collections.Generic.KeyValuePair<string, string> kvp) {
+                                    nm = kvp.Value;
+                                    groupImageCache.TryGetValue(kvp.Key, out icon);
+                                }
+                                
+                                if (icon != null) {
+                                    g.DrawImage(icon, new Rectangle(e2.Bounds.X + 3, iy, 16, 16));
+                                } else {
+                                    drawGroupIcon(g, e2.Bounds.X + 3, iy);
+                                }
+
                                 var tr = new Rectangle(e2.Bounds.X + 24, e2.Bounds.Y, e2.Bounds.Width - 26, e2.Bounds.Height);
                                 TextRenderer.DrawText(g, nm, lstGroup.Font, tr, SystemColors.WindowText, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.SingleLine);
                             };
