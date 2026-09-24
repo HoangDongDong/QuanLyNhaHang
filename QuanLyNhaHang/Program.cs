@@ -3,11 +3,12 @@ using System.Windows.Forms;
 
 namespace QuanLyNhaHang
 {
-    internal static class Program
+    public static class Program
     {
         public static string CurrentUser { get; set; } = "admin";
         public static string CurrentUserId { get; set; } = "";
         public static string CurrentUserGroup { get; set; } = "Administrator";
+        public static string CurrentUserGroupId { get; set; } = "";
         public static bool IsAdmin { get; set; } = true;
         public static string CurrentDatabase { get; set; } = "DEMO";
         public static string CurrentDatabasePath { get; set; } = @"d:\QuanLyNhaHang\Database\DEMO.FDB";
@@ -65,6 +66,7 @@ namespace QuanLyNhaHang
             Application.SetCompatibleTextRenderingDefault(false);
 
             // Load last selected database path from config
+            try { No1Lib.Sys.EasyReg.Key = Microsoft.Win32.Registry.CurrentUser; } catch { }
             LoadLastDatabaseFromConfig();
 
             // Step 1: Login Form (Form1) opens directly first
@@ -74,7 +76,34 @@ namespace QuanLyNhaHang
                 {
                     CurrentUser = loginForm.LoggedInUser;
 
+                    // Load Global Configs
+                    string connStr = Services.DbFormService.GetConnectionString(CurrentDatabasePath);
+                    Services.GlobalConfig.LoadAllConfigs(connStr);
+
+                    // Initialize No1Lib Global Database & DbConfig
+                    try
+                    {
+                        No1Lib.Db.Database db = new No1Lib.Db.Database("localhost", "SYSDBA", "masterkey", CurrentDatabasePath);
+                        db.ReConnect();
+                        No1Lib.Sys.Config.Db = db;
+                        No1Lib.Db.DbConfig.Database = db;
+                        No1Lib.Db.DbConfig.UserID = CurrentUserId;
+                        No1Lib.Db.DbConfig.UserName = CurrentUser;
+                        No1Lib.Db.DbConfig.IsAdmin = IsAdmin;
+                        DbMapping.SystemConfig.Db = db;
+                        try { DbMapping.BaseSystemConfig.Refresh(); } catch { }
+                        No1Run.TDONHANG0Ae.EnsureNo1LibInitialized();
+                    }
+                    catch (Exception exDb)
+                    {
+                        System.Diagnostics.Debug.WriteLine("Init No1Lib error: " + exDb.Message);
+                    }
+
+                    // Load Permissions for current user's group
+                    Services.PermissionService.LoadPermissionsForCurrentUser();
+
                     // Step 2: Launch Main MDI App
+                    Services.DynamicCompilerService.CompileGlobalAssembly(Services.DbFormService.LoadAllForms(CurrentDatabasePath));
                     Application.Run(new FormMain());
                 }
             }

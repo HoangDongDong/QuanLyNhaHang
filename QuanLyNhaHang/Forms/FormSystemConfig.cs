@@ -1529,6 +1529,7 @@ namespace QuanLyNhaHang
                         trans.Commit();
                     }
                 }
+                GlobalConfig.LoadAllConfigs(connStr);
 
                 MessageBox.Show("Đã ghi thành công thông tin cấu hình hệ thống!", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 this.Close();

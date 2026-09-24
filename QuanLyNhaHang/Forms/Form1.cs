@@ -121,7 +121,7 @@ namespace QuanLyNhaHang
                 {
                     conn.Open();
                     string sql = @"
-                        SELECT u.ID, u.USERNAME, u.PASSWORD, u.NAME, u.ISADMIN, g.NAME AS GROUPNAME
+                        SELECT u.ID, u.USERNAME, u.PASSWORD, u.NAME, u.ISADMIN, u.SGROUPUSERID, g.NAME AS GROUPNAME
                         FROM SUSER u
                         LEFT JOIN SGROUPUSER g ON u.SGROUPUSERID = g.ID
                         WHERE LOWER(u.USERNAME) = LOWER(@username)";
@@ -151,6 +151,7 @@ namespace QuanLyNhaHang
                             LoggedInUser = reader["USERNAME"].ToString();
                             Program.CurrentUser = LoggedInUser;
                             Program.CurrentUserId = reader["ID"] != DBNull.Value ? reader["ID"].ToString() : "";
+                            Program.CurrentUserGroupId = reader["SGROUPUSERID"] != DBNull.Value ? reader["SGROUPUSERID"].ToString() : "";
                             Program.CurrentUserGroup = reader["GROUPNAME"] != DBNull.Value ? reader["GROUPNAME"].ToString() : "Nhân viên";
                             Program.IsAdmin = (username.ToLower() == "admin") ||
                                               (reader["ISADMIN"] != DBNull.Value && (reader["ISADMIN"].ToString() == "1" || reader["ISADMIN"].ToString() == "30"));
@@ -168,6 +169,7 @@ namespace QuanLyNhaHang
                 {
                     LoggedInUser = username;
                     Program.CurrentUser = username;
+                    Program.CurrentUserGroupId = "";
                     Program.CurrentUserGroup = "Administrator";
                     Program.IsAdmin = true;
                     this.DialogResult = DialogResult.OK;

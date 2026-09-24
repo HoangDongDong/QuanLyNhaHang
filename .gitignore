@@ -10,3 +10,7 @@ scratch/
 Database/*.FDB
 Database/*.fdb
 Database/*.LCK
+*.zip
+UpgradeLog*.htm
+*.log
+HoaDon/

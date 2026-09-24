@@ -1248,9 +1248,28 @@ namespace QuanLyNhaHang.Services
         {
             try
             {
+                // 1. Prioritize compiled SuDungDichVu ("Sử dụng dịch vụ") form directly
+                if (string.Equals(formName, "Sử dụng dịch vụ", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(formName, "SuDungDichVu", StringComparison.OrdinalIgnoreCase) ||
+                    (!string.IsNullOrEmpty(formName) && (
+                        formName.IndexOf("Sử dụng dịch vụ", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        formName.IndexOf("SuDungDichVu", StringComparison.OrdinalIgnoreCase) >= 0
+                    )))
+                {
+                    FormModel m = GetFormModelFromDb("Sử dụng dịch vụ") ?? GetFormModelFromDb(formName);
+                    return CreateDynamicSuDungDichVuForm(m);
+                }
+
                 FormModel model = GetFormModelFromDb(formName);
 
-                // 1. Prioritize XML layout from SFORM.AELAYOUT if present in DB
+                if (model != null && (
+                    string.Equals(model.ClassName, "SuDungDichVu", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(model.Name, "Sử dụng dịch vụ", StringComparison.OrdinalIgnoreCase)))
+                {
+                    return CreateDynamicSuDungDichVuForm(model);
+                }
+
+                // 2. Prioritize XML layout from SFORM.AELAYOUT if present in DB
                 if (model != null && !string.IsNullOrEmpty(model.AeLayout))
                 {
                     string stitchedXml = StitchFormXmlLayouts(model);
@@ -1258,17 +1277,20 @@ namespace QuanLyNhaHang.Services
                     if (xmlForm != null)
                     {
                         AttachDynamicDataBindings(xmlForm, model);
+                        // Execute logic code from SFORM.CODE/CLIENTCODE
+                        CodeInterpreter.ApplyFormLogic(xmlForm, model);
                         return xmlForm;
                     }
                 }
 
-                // 2. Specific Fallbacks if AELAYOUT is empty/NULL in DB
-                if (string.Equals(formName, "Sá»­ dá»¥ng dá»‹ch vá»¥", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(formName, "SuDungDichVu", StringComparison.OrdinalIgnoreCase) ||
-                    (model != null && string.Equals(model.ClassName, "SuDungDichVu", StringComparison.OrdinalIgnoreCase)))
+                if (string.Equals(formName, "Thống kê", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(formName, "ThongKe", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(formName, "1f516fe7-3b71-4cbf-a3e8-61ad116bfa79", StringComparison.OrdinalIgnoreCase))
                 {
-                    return CreateDynamicSuDungDichVuForm(model);
+                    return new No1Run.ThongKe();
                 }
+
+                // 3. Specific Fallbacks if AELAYOUT is empty/NULL in DB
 
                 if (string.Equals(formName, "Chuyá»ƒn hoÃ¡ Ä‘Æ¡n", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(formName, "Chuyá»ƒn hÃ³a Ä‘Æ¡n", StringComparison.OrdinalIgnoreCase) ||
@@ -1428,83 +1450,23 @@ namespace QuanLyNhaHang.Services
         {
             Form form = new Form
             {
-                Text = model != null && !string.IsNullOrEmpty(model.Name) ? model.Name : "Sá»­ dá»¥ng dá»‹ch vá»¥",
-                Size = new Size(1024, 545),
+                Text = model != null && !string.IsNullOrEmpty(model.Name) ? model.Name : "Sử dụng dịch vụ",
+                Size = new Size(1024, 600),
                 BackColor = System.Drawing.Color.White,
                 WindowState = FormWindowState.Normal
             };
 
-            // Dynamic 3-panel container matching SFORM layout
-            SplitContainer splitMain = new SplitContainer { Dock = DockStyle.Fill, SplitterDistance = 350 };
-            SplitContainer splitKhuVuc = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 360 };
-            TabControl tabKhuVuc = new TabControl { Dock = DockStyle.Fill, Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold) };
-            TabControl tabKhuVuc2 = new TabControl { Dock = DockStyle.Fill, Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold) };
-
-            splitKhuVuc.Panel1.Controls.Add(tabKhuVuc);
-            splitKhuVuc.Panel2.Controls.Add(tabKhuVuc2);
-            splitMain.Panel1.Controls.Add(splitKhuVuc);
-
-            // Right Order & Food Menu Panel
-            SplitContainer splitCenterRight = new SplitContainer { Dock = DockStyle.Fill, SplitterDistance = 580 };
-            SplitContainer splitCenter = new SplitContainer { Dock = DockStyle.Fill, Orientation = Orientation.Horizontal, SplitterDistance = 550 };
-
-            Panel pnlOrderHeader = new Panel { Dock = DockStyle.Top, Height = 100, BackColor = System.Drawing.Color.FromArgb(240, 243, 248) };
-            Label lblActiveTable = new Label { Text = "ChÆ°a chá»n bÃ n", Font = new System.Drawing.Font("Segoe UI", 11F, System.Drawing.FontStyle.Bold), Location = new System.Drawing.Point(10, 10), AutoSize = true };
-            Label lblStartTime = new Label { Text = "ChÆ°a báº¯t Ä‘áº§u", Font = new System.Drawing.Font("Segoe UI", 9F), ForeColor = System.Drawing.Color.Gray, Location = new System.Drawing.Point(120, 13), AutoSize = true };
-            Button btnStart = new Button { Text = "Báº¯t Ä‘áº§u", Location = new System.Drawing.Point(240, 8), Size = new System.Drawing.Size(75, 26), Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold) };
-
-            pnlOrderHeader.Controls.Add(lblActiveTable);
-            pnlOrderHeader.Controls.Add(lblStartTime);
-            pnlOrderHeader.Controls.Add(btnStart);
-
-            DataGridView dgvOrder = new DataGridView
+            try
             {
-                Dock = DockStyle.Fill,
-                BackgroundColor = System.Drawing.Color.White,
-                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-                AllowUserToAddRows = false,
-                ReadOnly = true
-            };
-
-            DataTable dtOrder = new DataTable();
-            dtOrder.Columns.Add("TÃªn hÃ ng", typeof(string));
-            dtOrder.Columns.Add("ÄVT", typeof(string));
-            dtOrder.Columns.Add("SL", typeof(decimal));
-            dtOrder.Columns.Add("Ä giÃ¡", typeof(decimal));
-            dtOrder.Columns.Add("CK%", typeof(decimal));
-            dtOrder.Columns.Add("T tiá»n", typeof(decimal));
-            dtOrder.Columns.Add("Ghi chÃº", typeof(string));
-            dgvOrder.DataSource = dtOrder;
-
-            Panel pnlSummary = new Panel { Dock = DockStyle.Fill, BackColor = System.Drawing.Color.FromArgb(242, 244, 248) };
-            Label lblTotalText = new Label { Text = "Tá»•ng cá»™ng:", Font = new System.Drawing.Font("Segoe UI", 12F, System.Drawing.FontStyle.Bold), Location = new System.Drawing.Point(100, 60), AutoSize = true };
-            Label lblTotalVal = new Label { Text = "0", Font = new System.Drawing.Font("Segoe UI", 18F, System.Drawing.FontStyle.Bold), ForeColor = System.Drawing.Color.Red, Location = new System.Drawing.Point(220, 55), AutoSize = true };
-            Button btnPay = new Button { Text = "Thanh toÃ¡n (F11)", Anchor = AnchorStyles.Top | AnchorStyles.Right, Location = new System.Drawing.Point(480, 50), Size = new System.Drawing.Size(90, 40), Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold) };
-
-            pnlSummary.Controls.Add(lblTotalText);
-            pnlSummary.Controls.Add(lblTotalVal);
-            pnlSummary.Controls.Add(btnPay);
-
-            splitCenter.Panel1.Controls.Add(dgvOrder);
-            splitCenter.Panel1.Controls.Add(pnlOrderHeader);
-            splitCenter.Panel2.Controls.Add(pnlSummary);
-            splitCenterRight.Panel1.Controls.Add(splitCenter);
-
-            // Food Categories Tree + Food Grid Panel
-            Panel pnlRight = new Panel { Dock = DockStyle.Fill };
-            TreeView treeNhom = new TreeView { Dock = DockStyle.Top, Height = 250, Font = new System.Drawing.Font("Segoe UI", 9F) };
-            DataGridView dgvFood = new DataGridView { Dock = DockStyle.Fill, BackgroundColor = System.Drawing.Color.White, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill, AllowUserToAddRows = false, ReadOnly = true };
-
-            pnlRight.Controls.Add(dgvFood);
-            pnlRight.Controls.Add(treeNhom);
-            splitCenterRight.Panel2.Controls.Add(pnlRight);
-            splitMain.Panel2.Controls.Add(splitCenterRight);
-
-            form.Controls.Add(splitMain);
-
-            // Load Data from Firebird SQL Tables dynamically
-            LoadDynamicKhuVucAndBan(tabKhuVuc, tabKhuVuc2, splitKhuVuc, lblActiveTable, lblStartTime, btnStart, dtOrder, lblTotalVal, dgvOrder);
-            LoadDynamicNhomAndThucDon(treeNhom, dgvFood, dtOrder, lblTotalVal);
+                No1Run.SuDungDichVu sddv = new No1Run.SuDungDichVu();
+                sddv.Dock = DockStyle.Fill;
+                form.Controls.Add(sddv);
+                sddv.No1UserControl1_OnAddedToTab(sddv, EventArgs.Empty);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("Error creating SuDungDichVu: " + ex.Message);
+            }
 
             return form;
         }
