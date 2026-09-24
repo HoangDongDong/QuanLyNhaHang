@@ -34,6 +34,7 @@ namespace No1Run
 
         public ThongKe()
         {
+            No1Run.TDONHANG0Ae.EnsureNo1LibInitialized();
             InitializeComponent();
             LoadImages();
         }
@@ -65,6 +66,7 @@ namespace No1Run
 
         public void form_Load(Object sender, EventArgs e)
         {
+            No1Run.TDONHANG0Ae.EnsureNo1LibInitialized();
             SUSERID = DbConfig.UserID;
             if (DbUtils.CanView(Functions.XemThongKeCuaCacCaiKhoanKhac) || DbUtils.CanView(Functions.XemThongKeCuaCacTaiKhoanKhac))
             {
