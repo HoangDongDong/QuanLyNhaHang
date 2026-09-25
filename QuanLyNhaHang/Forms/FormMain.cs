@@ -383,6 +383,7 @@ namespace QuanLyNhaHang
         private void BuildFallbackMenus()
         {
             ToolStripMenuItem menuHoatDong = new ToolStripMenuItem("HOẠT ĐỘNG");
+            menuHoatDong.DropDownItems.Add(new ToolStripMenuItem("Danh mục bàn khu vực", GetIconForMenuItem("Danh mục bàn khu vực", null, null), (s, e) => OpenFormByName("Danh mục bàn khu vực")));
             menuHoatDong.DropDownItems.Add(new ToolStripMenuItem("Danh mục mặt hàng", GetIconForMenuItem("Danh mục mặt hàng", null, null), (s, e) => OpenFormByName("Danh mục mặt hàng")));
             menuHoatDong.DropDownItems.Add(new ToolStripMenuItem("Sử dụng dịch vụ", GetIconForMenuItem("Sử dụng dịch vụ", null, null), (s, e) => OpenFormByName("Sử dụng dịch vụ")));
             menuHoatDong.DropDownItems.Add(new ToolStripMenuItem("Quản lý bán hàng", GetIconForMenuItem("Quản lý bán hàng", null, null), (s, e) => OpenFormByName("Quản lý bán hàng")));
@@ -662,7 +663,71 @@ namespace QuanLyNhaHang
                     (formName.IndexOf("dịch vụ", StringComparison.OrdinalIgnoreCase) >= 0 ||
                      formName.IndexOf("SuDungDichVu", StringComparison.OrdinalIgnoreCase) >= 0);
 
-                string displayTitle = isServiceForm ? "Sử dụng dịch vụ" : formName;
+                bool isMatHang = !string.IsNullOrEmpty(formName) &&
+                    (string.Equals(formName, "DMATHANG", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(formName, "DanhMucMatHang", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(formName, "f3784a00-a86f-44d6-86b8-01187cc1a5e2", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(formName, "a4a16216-aee9-4dd3-9f92-c1e4d85c06a2", StringComparison.OrdinalIgnoreCase) ||
+                     formName.IndexOf("danh mục mặt hàng", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     formName.IndexOf("danh muc mat hang", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     formName.IndexOf("nhóm mặt hàng", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     formName.IndexOf("nhom mat hang", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     formName.IndexOf("m?t h", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     formName.IndexOf("m?c m", StringComparison.OrdinalIgnoreCase) >= 0);
+
+                bool isBanKhuVuc = !string.IsNullOrEmpty(formName) &&
+                    (string.Equals(formName, "DBAN", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(formName, "DKHUVUC", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(formName, "DanhMucBanKhuVuc", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(formName, "DanhMucKhuVuc", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(formName, "756598f2-e672-4c0f-b6a8-d7d514feb5be", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(formName, "f2288345-031a-4e1b-a76d-3b2e537674a6", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(formName, "9e2afcb8-7f63-4123-b0f7-c32cc187dd65", StringComparison.OrdinalIgnoreCase) ||
+                     formName.IndexOf("bàn khu vực", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     formName.IndexOf("ban khu vuc", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     formName.IndexOf("bàn, khu vực", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     formName.IndexOf("danh mục bàn", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     formName.IndexOf("danh mục khu vực", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     formName.IndexOf("danh muc ban", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     formName.IndexOf("danh muc khu vuc", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     formName.IndexOf("b?n khu", StringComparison.OrdinalIgnoreCase) >= 0);
+
+                bool isKhachHang = !string.IsNullOrEmpty(formName) &&
+                    (string.Equals(formName, "DKHACHHANG", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(formName, "DNHOMKHACHHANG", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(formName, "DanhMucKhachHang", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(formName, "f5093034-07a8-41a3-8561-7864cbab2d2e", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(formName, "5fcc571a-662d-4953-a83f-6004c732f439", StringComparison.OrdinalIgnoreCase) ||
+                     (!string.IsNullOrEmpty(formName) &&
+                      formName.IndexOf("thân thiết", StringComparison.OrdinalIgnoreCase) < 0 &&
+                      formName.IndexOf("than thiet", StringComparison.OrdinalIgnoreCase) < 0 && (
+                          formName.IndexOf("danh mục khách hàng", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          formName.IndexOf("danh muc khach hang", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          formName.IndexOf("nhóm khách hàng", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          formName.IndexOf("nhom khach hang", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          formName.IndexOf("khách hàng", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          formName.IndexOf("khach hang", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          formName.IndexOf("khch hng", StringComparison.OrdinalIgnoreCase) >= 0
+                      )));
+
+                bool isKhuyenMai = !string.IsNullOrEmpty(formName) &&
+                    (string.Equals(formName, "DDOTKHUYENMAI", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(formName, "DLOAIHINHKHUYENMAI", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(formName, "DanhMucDotKhuyenMai", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(formName, "e1bfaa55-e880-4835-94e4-b98443ded684", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(formName, "1732f45e-07ab-46ff-9489-66273cdb8eda", StringComparison.OrdinalIgnoreCase) ||
+                     (!string.IsNullOrEmpty(formName) &&
+                      formName.IndexOf("cảnh báo", StringComparison.OrdinalIgnoreCase) < 0 &&
+                      formName.IndexOf("canh bao", StringComparison.OrdinalIgnoreCase) < 0 && (
+                          formName.IndexOf("đợt khuyến mại", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          formName.IndexOf("dot khuyen mai", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          formName.IndexOf("danh mục đợt khuyến mại", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          formName.IndexOf("danh muc dot khuyen mai", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          formName.IndexOf("khuyến mại", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          formName.IndexOf("khuyen mai", StringComparison.OrdinalIgnoreCase) >= 0
+                      )));
+
+                string displayTitle = isServiceForm ? "Sử dụng dịch vụ" : (isMatHang ? "Danh mục mặt hàng" : (isBanKhuVuc ? "Danh mục bàn khu vực" : (isKhachHang ? "Danh mục khách hàng" : (isKhuyenMai ? "Danh mục đợt khuyến mại" : formName))));
 
                 // If tab is already open in tabMain, remove old tab so fresh stitched form is loaded
                 for (int i = tabMain.TabPages.Count - 1; i >= 0; i--)
@@ -679,6 +744,16 @@ namespace QuanLyNhaHang
                 Form targetForm = DbFormService.CreateFormByName(formName);
                 if (targetForm != null)
                 {
+                    if (targetForm is No1Lib.Sys.TreeDataMg)
+                    {
+                        using (targetForm)
+                        {
+                            targetForm.StartPosition = FormStartPosition.CenterParent;
+                            targetForm.ShowDialog(this);
+                        }
+                        return;
+                    }
+
                     TabPage newPage = new TabPage(displayTitle) { Tag = displayTitle };
                     targetForm.TopLevel = false;
                     targetForm.FormBorderStyle = FormBorderStyle.None;

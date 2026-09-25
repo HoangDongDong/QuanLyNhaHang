@@ -13,6 +13,7 @@
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
     <ResolveNuGetPackages>false</ResolveNuGetPackages>
+    <CodePage>65001</CodePage>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>x86</PlatformTarget>
@@ -254,8 +255,14 @@
     <Compile Include="Services\CodeInterpreter.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <EmbeddedResource Include="Forms\DanhSachBillHuy.resx">
+      <DependentUpon>DanhSachBillHuy.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="Forms\FormDataEntryTemplate.resx">
       <DependentUpon>FormDataEntryTemplate.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Forms\QuanLyBanHangNhaHang.resx">
+      <DependentUpon>QuanLyBanHangNhaHang.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="Forms\SuDungDichVu.resx">
       <DependentUpon>SuDungDichVu.cs</DependentUpon>
@@ -351,6 +358,12 @@
     <Compile Include="Forms\DanhSachBillHuy.Designer.cs">
       <DependentUpon>DanhSachBillHuy.cs</DependentUpon>
     </Compile>
+    <Compile Include="Forms\KhachHangThanThiet.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Forms\KhachHangThanThiet.Designer.cs">
+      <DependentUpon>KhachHangThanThiet.cs</DependentUpon>
+    </Compile>
     <Compile Include="Forms\DichVuMayTinhBang.cs">
       <SubType>UserControl</SubType>
     </Compile>
@@ -365,6 +378,21 @@
     </Compile>
     <Compile Include="Forms\KhuVucControl.cs">
       <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Forms\DanhMucMatHang.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\DanhMucBanKhuVuc.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\DanhMucKhachHang.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\DanhMucDotKhuyenMai.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\FormThemNhanhBan.cs">
+      <SubType>Form</SubType>
     </Compile>
     <Compile Include="Forms\KhuVucControl.Designer.cs">
       <DependentUpon>KhuVucControl.cs</DependentUpon>
@@ -442,6 +470,43 @@
     <Compile Include="Forms\SuDungDichVu.Designer.cs">
       <DependentUpon>SuDungDichVu.cs</DependentUpon>
     </Compile>
+    <Compile Include="Forms\QuanLyBanHangNhaHang.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Forms\QuanLyBanHangNhaHang.Designer.cs">
+      <DependentUpon>QuanLyBanHangNhaHang.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Forms\ThongKeDoanhThu.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Forms\ThongKeDoanhThu.Designer.cs">
+      <DependentUpon>ThongKeDoanhThu.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Forms\MergeCell.cs" />
+    <Compile Include="Forms\TheoDoiDatPhong.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Forms\TheoDoiDatPhong.Designer.cs">
+      <DependentUpon>TheoDoiDatPhong.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Forms\ThongKeMatHangBan.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Forms\ThongKeMatHangBan.Designer.cs">
+      <DependentUpon>ThongKeMatHangBan.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Forms\LuuVetHoatDong.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Forms\LuuVetHoatDong.Designer.cs">
+      <DependentUpon>LuuVetHoatDong.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Forms\KiemSoatOrder.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Forms\KiemSoatOrder.Designer.cs">
+      <DependentUpon>KiemSoatOrder.cs</DependentUpon>
+    </Compile>
     <Compile Include="Forms\ChuyenBan.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -459,6 +524,12 @@
     </Compile>
     <Compile Include="Forms\ThongKe.Designer.cs">
       <DependentUpon>ThongKe.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Forms\TamUngDonHang.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\TamUngDonHang.Designer.cs">
+      <DependentUpon>TamUngDonHang.cs</DependentUpon>
     </Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

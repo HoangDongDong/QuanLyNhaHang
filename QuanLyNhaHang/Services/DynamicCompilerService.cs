@@ -196,14 +196,23 @@ namespace No1Run {
                 parameters.ReferencedAssemblies.Add("System.Xml.dll");
                 parameters.ReferencedAssemblies.Add("System.Core.dll");
 
+                HashSet<string> loadedAsmNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    "System", "System.Data", "System.Drawing", "System.Windows.Forms", "System.Xml", "System.Core"
+                };
+
                 string exeDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
                 if (Directory.Exists(exeDir))
                 {
                     foreach (string dllPath in Directory.GetFiles(exeDir, "*.dll"))
                     {
                         try {
-                            AssemblyName.GetAssemblyName(dllPath);
-                            if (!parameters.ReferencedAssemblies.Contains(dllPath)) parameters.ReferencedAssemblies.Add(dllPath);
+                            AssemblyName an = AssemblyName.GetAssemblyName(dllPath);
+                            if (!loadedAsmNames.Contains(an.Name))
+                            {
+                                loadedAsmNames.Add(an.Name);
+                                parameters.ReferencedAssemblies.Add(dllPath);
+                            }
                         } catch { }
                     }
                 }
@@ -213,13 +222,27 @@ namespace No1Run {
                     foreach (string dllPath in Directory.GetFiles(projectLibsDir, "*.dll"))
                     {
                         try {
-                            AssemblyName.GetAssemblyName(dllPath);
-                            if (!parameters.ReferencedAssemblies.Contains(dllPath)) parameters.ReferencedAssemblies.Add(dllPath);
+                            AssemblyName an = AssemblyName.GetAssemblyName(dllPath);
+                            if (!loadedAsmNames.Contains(an.Name))
+                            {
+                                loadedAsmNames.Add(an.Name);
+                                parameters.ReferencedAssemblies.Add(dllPath);
+                            }
                         } catch { }
                     }
                 }
 
-                parameters.ReferencedAssemblies.Add(Assembly.GetExecutingAssembly().Location);
+                try
+                {
+                    string execLocation = Assembly.GetExecutingAssembly().Location;
+                    AssemblyName an = AssemblyName.GetAssemblyName(execLocation);
+                    if (!loadedAsmNames.Contains(an.Name))
+                    {
+                        loadedAsmNames.Add(an.Name);
+                        parameters.ReferencedAssemblies.Add(execLocation);
+                    }
+                }
+                catch { }
 
                 CompilerResults results = compiler.CompileAssemblyFromSource(parameters, allSources.ToString());
 

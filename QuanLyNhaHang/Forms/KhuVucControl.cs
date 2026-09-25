@@ -805,6 +805,9 @@ namespace QuanLyNhaHang.Forms
         public const string XemThongKeCuaCacTaiKhoanKhac = "XemThongKeCuaCacTaiKhoanKhac";
         public const string XemDonGiaTrongHoaDonBanHang = "XemDonGiaTrongHoaDonBanHang";
         public const string XoaGiamMonSauKhiInCheBien = "XoaGiamMonSauKhiInCheBien";
+        public const string XemGiaNhap = "XemGiaNhap";
+        public const string DieuChinhGioTinhLuongDichVuTheoGio = "DieuChinhGioTinhLuongDichVuTheoGio";
+        public const string KhachHangThanThiet = "KhachHangThanThiet";
     }
 
     public static class Forms
@@ -831,7 +834,7 @@ namespace QuanLyNhaHang.Forms
         public const string DatSoLuong = "bc278f96-6677-8899-aabb-ccddeeff0011";
         public const string GiamGiaTheoNhom = "cd3890a7-7788-99aa-bbcc-ddeeff001122";
         public const string NhapMatKhauGiamDo = "de4901b8-8899-aabb-ccdd-eeff00112233";
-        public const string TamUngDonHang = "ef5012c9-99aa-bbcc-ddee-ff0011223344";
+        public const string TamUngDonHang = "064236d2-8fcc-415b-80cb-420e69f19c0c";
         public const string ThayDoiGioVao = "f06123da-aabb-ccdd-eeff-001122334455";
         public const string ThongKe = "1f516fe7-3b71-4cbf-a3e8-61ad116bfa79";
         public const string TimKiemDatTruoc = "128345fc-ccdd-eeff-0011-223344556677";
@@ -840,10 +843,30 @@ namespace QuanLyNhaHang.Forms
         public const string TDONHANG0Ae = "f3f7bb77-f4ba-4111-9066-014f52be79a0";
         public const string KhuVucControl = "f842ff6f-80e3-46ab-bf04-7dda627513d1";
         public const string SuDungDichVu = "141ca9a1-6819-49e2-b8a6-c1ac806ef0a9";
+        public const string QuanLyBanHangNhaHang = "417e6d1d-ed16-4847-b752-65c3cefbe341";
+        public const string QuanLyBanHang = "417e6d1d-ed16-4847-b752-65c3cefbe341";
+        public const string ThongKeDoanhThu = "d913c8d9-4395-476c-9612-8ca7f35b6268";
+        public const string TheoDoiDatPhong = "11f4bf28-9dd4-4a22-8c5c-e912a637576a";
+        public const string ThongKeMatHangBan = "67500401-1f1e-4c18-a0fc-f487c43f4b0c";
+        public const string ChiTietBanHangTheoMatHang = "5645abce-8395-4c94-ac64-f2e0e55007d8";
+        public const string LuuVetHoatDong = "ac206bb6-0236-48a6-b558-b674e015c21c";
+        public const string XacNhanXoaLuuVet = "c73a5edd-3c2c-452e-83de-48f6790bb32e";
+        public const string KiemSoatOrder = "8cb6cbb8-5303-4425-a086-7e8280a4cb3e";
+        public const string DanhSachBillHuy = "a52478cf-2d23-4ff0-8b63-e098e5ce6829";
+        public const string KhachHangThanThiet = "10e06969-754e-404a-9ea4-1f0d4574ddb7";
+        public const string KhoHang = "aad0140d-3805-490a-9698-6a947b1f8af5";
+    }
+
+    public static class Menus
+    {
+        public const string DieuChinhHoaDon = "a6bfe97d-7e61-4c79-a6a3-e8437da57e5d";
+        public const string QuanLyBanHang = "65d26e6c-682f-40cf-84d3-ba02343c6223";
+        public const string DanhMucKhoHang = "aad0140d-3805-490a-9698-6a947b1f8af5";
     }
 
     public static class Tables
     {
+        public const string DKHOHANG = "DKHOHANG";
         public const string DTAIKHOANNGANHANG = "DTAIKHOANNGANHANG";
         public const string DDONVITINH = "DDONVITINH";
         public const string DMATHANG = "DMATHANG";
@@ -855,6 +878,11 @@ namespace QuanLyNhaHang.Forms
         public const string SUSER = "SUSER";
         public const string DNHOMMATHANG = "DNHOMMATHANG";
         public const string DBANGGIA = "DBANGGIA";
+        public const string DCUAHANG = "DCUAHANG";
+        public const string DLOAIPHONG = "DLOAIPHONG";
+        public const string TDATHANG = "TDATHANG";
+        public const string TDATHANGCHITIET = "TDATHANGCHITIET";
+        public const string DMUCDICHDAT = "DMUCDICHDAT";
     }
 
     public class DMATHANGRow
@@ -892,6 +920,7 @@ namespace QuanLyNhaHang.Forms
         None = 0,
         InCheBien = 1,
         HuyHoaDon = 2,
+        HuyBill = 2,
         ChuyenBan = 3,
         GopBan = 4,
         ThanhToan = 5,

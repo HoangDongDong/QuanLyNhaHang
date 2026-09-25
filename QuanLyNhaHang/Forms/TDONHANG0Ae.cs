@@ -842,6 +842,8 @@ namespace No1Run
             grMatHang.SelectionChanged += new EventHandler(grMatHang_SelectionChanged);
             grMatHang.CellMouseDown += new DataGridViewCellMouseEventHandler(grMatHang_CellMouseDown);
             grMatHang.CellMouseDoubleClick += new DataGridViewCellMouseEventHandler(grMatHang_CellMouseDoubleClick);
+            grMatHang.OnContextMenuShowing -= GrMatHang_OnContextMenuShowing;
+            grMatHang.OnContextMenuShowing += GrMatHang_OnContextMenuShowing;
             grDetail.GridView.CellMouseDoubleClick += new DataGridViewCellMouseEventHandler(grDetail_CellMouseDoubleClick);
             grDetail.GridView.SelectionChanged += new EventHandler(grDetail_SelectionChanged);
             tvCat.tvMain.Enter += new EventHandler(tvMain_Enter);
@@ -1262,6 +1264,13 @@ namespace No1Run
                 {
                     grMatHang.DataError -= GrMatHang_DataError;
                     grMatHang.DataError += GrMatHang_DataError;
+                    grMatHang.OnContextMenuShowing -= GrMatHang_OnContextMenuShowing;
+                    grMatHang.OnContextMenuShowing += GrMatHang_OnContextMenuShowing;
+                    if (grMatHang.ContextMenuStripEx != null)
+                    {
+                        grMatHang.ContextMenuStripEx.Opening -= ContextMenuStripEx_Opening;
+                        grMatHang.ContextMenuStripEx.Opening += ContextMenuStripEx_Opening;
+                    }
                 }
                 if (grGioHat?.GridView != null)
                 {
@@ -1317,6 +1326,8 @@ namespace No1Run
         {
             try
             {
+                EnsureMatHangLoaderInitialized();
+
                 string sqlMH = @"
                 SELECT 
                     M.ID, 
@@ -3188,6 +3199,11 @@ WHERE DKHUVUCID = (SELECT DKHUVUCID FROM DBAN WHERE ID = '{0}')", DBANID);
                 {
                 }
             }
+
+            if (e.Button == MouseButtons.Right)
+            {
+                ConfigureMatHangContextMenu();
+            }
         }
 
         /// <summary>
@@ -3239,7 +3255,395 @@ WHERE DKHUVUCID = (SELECT DKHUVUCID FROM DBAN WHERE ID = '{0}')", DBANID);
                     e.Handled = true;
                 }
             }
+            else if (e.KeyCode == Keys.Insert)
+            {
+                DoThemMoiMatHang();
+                e.Handled = true;
+            }
+            else if (e.KeyCode == Keys.F2)
+            {
+                DoChinhSuaMatHang();
+                e.Handled = true;
+            }
+            else if (e.KeyCode == Keys.Delete)
+            {
+                DoChuyenVaoThungRacMatHang();
+                e.Handled = true;
+            }
+            else if (e.KeyCode == Keys.F5)
+            {
+                LoadMatHangGrid();
+                e.Handled = true;
+            }
         }
+
+        #region Xử lý Menu ngữ cảnh và CRUD Mặt hàng cho grMatHang
+
+        private ToolStripMenuItem mnuMhThemMoi;
+        private ToolStripMenuItem mnuMhChinhSua;
+        private ToolStripMenuItem mnuMhThungRac;
+        private ToolStripMenuItem mnuMhXoa;
+        private ToolStripMenuItem mnuMhRefresh;
+
+        private void GrMatHang_OnContextMenuShowing(object sender, EventArgs e)
+        {
+            ConfigureMatHangContextMenu();
+        }
+
+        private void ContextMenuStripEx_Opening(object sender, CancelEventArgs e)
+        {
+            ConfigureMatHangContextMenu();
+        }
+
+        private void EnsureMatHangLoaderInitialized()
+        {
+            try
+            {
+                if (grMatHang != null && grMatHang.Loader == null)
+                {
+                    var vl = new ViewLoader(new byte[0], grMatHang, true, true);
+                    var fRoot = typeof(ViewLoader).GetField("RootTable", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+                    if (fRoot != null)
+                    {
+                        fRoot.SetValue(vl, Tables.DMATHANG);
+                    }
+
+                    foreach (var f in typeof(DataSearch).GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public))
+                    {
+                        if (f.FieldType == typeof(ViewLoader))
+                        {
+                            f.SetValue(grMatHang, vl);
+                            break;
+                        }
+                    }
+                }
+                else if (grMatHang != null && grMatHang.Loader != null)
+                {
+                    var fRoot = typeof(ViewLoader).GetField("RootTable", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+                    if (fRoot != null && fRoot.GetValue(grMatHang.Loader) == null)
+                    {
+                        fRoot.SetValue(grMatHang.Loader, Tables.DMATHANG);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("EnsureMatHangLoaderInitialized error: " + ex.Message);
+            }
+        }
+
+        private void ConfigureMatHangContextMenu()
+        {
+            try
+            {
+                EnsureMatHangLoaderInitialized();
+
+                if (grMatHang?.ContextMenuStripEx == null) return;
+                var items = grMatHang.ContextMenuStripEx.Items;
+
+                for (int i = items.Count - 1; i >= 0; i--)
+                {
+                    var item = items[i] as ToolStripMenuItem;
+                    if (item == null) continue;
+
+                    // Bỏ qua nếu đã là item tùy chỉnh của chúng ta
+                    if (item == mnuMhThemMoi || item == mnuMhChinhSua || item == mnuMhThungRac || item == mnuMhXoa || item == mnuMhRefresh)
+                        continue;
+
+                    string text = item.Text ?? "";
+
+                    if (text.Contains("Thêm mới"))
+                    {
+                        if (mnuMhThemMoi != null) { items.RemoveAt(i); continue; }
+                        mnuMhThemMoi = new ToolStripMenuItem(item.Text, item.Image, (s, ev) => DoThemMoiMatHang());
+                        items.RemoveAt(i);
+                        items.Insert(i, mnuMhThemMoi);
+                    }
+                    else if (text.Contains("Chỉnh sửa"))
+                    {
+                        if (mnuMhChinhSua != null) { items.RemoveAt(i); continue; }
+                        mnuMhChinhSua = new ToolStripMenuItem(item.Text, item.Image, (s, ev) => DoChinhSuaMatHang());
+                        items.RemoveAt(i);
+                        items.Insert(i, mnuMhChinhSua);
+                    }
+                    else if (text.Contains("thùng rác"))
+                    {
+                        if (mnuMhThungRac != null) { items.RemoveAt(i); continue; }
+                        mnuMhThungRac = new ToolStripMenuItem(item.Text, item.Image, (s, ev) => DoChuyenVaoThungRacMatHang());
+                        items.RemoveAt(i);
+                        items.Insert(i, mnuMhThungRac);
+                    }
+                    else if (text.Contains("khỏi hệ thống"))
+                    {
+                        if (mnuMhXoa != null) { items.RemoveAt(i); continue; }
+                        mnuMhXoa = new ToolStripMenuItem(item.Text, item.Image, (s, ev) => DoXoaMatHangKhoiHeThong());
+                        items.RemoveAt(i);
+                        items.Insert(i, mnuMhXoa);
+                    }
+                    else if (text.Contains("Refresh"))
+                    {
+                        if (mnuMhRefresh != null) { items.RemoveAt(i); continue; }
+                        mnuMhRefresh = new ToolStripMenuItem(item.Text, item.Image, (s, ev) => LoadMatHangGrid());
+                        items.RemoveAt(i);
+                        items.Insert(i, mnuMhRefresh);
+                    }
+                }
+
+                bool hasSelected = grMatHang.SelectedRows.Count > 0;
+                if (mnuMhChinhSua != null) mnuMhChinhSua.Enabled = hasSelected;
+                if (mnuMhThungRac != null) mnuMhThungRac.Enabled = hasSelected;
+                if (mnuMhXoa != null) mnuMhXoa.Enabled = hasSelected;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("ConfigureMatHangContextMenu error: " + ex.Message);
+            }
+        }
+
+        private string GetSelectedMatHangID()
+        {
+            try
+            {
+                if (grMatHang == null || grMatHang.SelectedRows.Count == 0) return null;
+                var rowView = grMatHang.SelectedRows[0].DataBoundItem as DataRowView;
+                if (rowView != null && rowView.Row != null && rowView.Row.Table.Columns.Contains("ID"))
+                {
+                    return rowView.Row["ID"]?.ToString();
+                }
+                if (grMatHang.SelectedRows[0].Cells["ID"] != null && grMatHang.SelectedRows[0].Cells["ID"].Value != null)
+                {
+                    return grMatHang.SelectedRows[0].Cells["ID"].Value.ToString();
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private string GetSelectedMatHangName()
+        {
+            try
+            {
+                if (grMatHang == null || grMatHang.SelectedRows.Count == 0) return "";
+                var rowView = grMatHang.SelectedRows[0].DataBoundItem as DataRowView;
+                if (rowView != null && rowView.Row != null && rowView.Row.Table.Columns.Contains("NAME"))
+                {
+                    return rowView.Row["NAME"]?.ToString() ?? "";
+                }
+                if (grMatHang.SelectedRows[0].Cells["NAME"] != null && grMatHang.SelectedRows[0].Cells["NAME"].Value != null)
+                {
+                    return grMatHang.SelectedRows[0].Cells["NAME"].Value.ToString();
+                }
+            }
+            catch { }
+            return "";
+        }
+
+        private void DoThemMoiMatHang()
+        {
+            try
+            {
+                EnsureMatHangLoaderInitialized();
+
+                try
+                {
+                    STABLEDESCRow desc = Config.GetTableDesc(Tables.DMATHANG);
+                    if (desc != null && !string.IsNullOrEmpty(desc.SFUNCTIONID) && !DbUtils.CanEdit(desc.SFUNCTIONID))
+                    {
+                        Msg.ShowWarning("Bạn không có quyền thêm mới mặt hàng!");
+                        return;
+                    }
+                }
+                catch { }
+
+                object formObj = Config.CreateAeForm(Tables.DMATHANG, 1, "");
+                if (formObj != null)
+                {
+                    if (formObj is IAddEditForm aeForm)
+                    {
+                        aeForm.ReLoad("");
+                        if (!string.IsNullOrEmpty(SelectedNhomID))
+                        {
+                            try { aeForm.SetValue("DNHOMMATHANGID", SelectedNhomID); } catch { }
+                        }
+                    }
+
+                    if (formObj is Form f)
+                    {
+                        f.StartPosition = FormStartPosition.CenterScreen;
+                        f.ShowDialog();
+                    }
+
+                    LoadMatHangGrid();
+                }
+                else
+                {
+                    Msg.ShowWarning("Không thể khởi tạo màn hình thêm mới mặt hàng!");
+                }
+            }
+            catch (Exception ex)
+            {
+                Msg.ShowError("Lỗi khi thêm mới mặt hàng: " + ex.Message);
+            }
+        }
+
+        private void DoChinhSuaMatHang()
+        {
+            try
+            {
+                EnsureMatHangLoaderInitialized();
+
+                string id = GetSelectedMatHangID();
+                if (string.IsNullOrEmpty(id))
+                {
+                    Msg.ShowWarning("Vui lòng chọn một mặt hàng để chỉnh sửa!");
+                    return;
+                }
+
+                try
+                {
+                    STABLEDESCRow desc = Config.GetTableDesc(Tables.DMATHANG);
+                    if (desc != null && !string.IsNullOrEmpty(desc.SFUNCTIONID) && !DbUtils.CanEdit(desc.SFUNCTIONID))
+                    {
+                        Msg.ShowWarning("Bạn không có quyền chỉnh sửa mặt hàng!");
+                        return;
+                    }
+                }
+                catch { }
+
+                object formObj = Config.CreateAeForm(Tables.DMATHANG, 0, id);
+                if (formObj != null)
+                {
+                    if (formObj is IAddEditForm aeForm)
+                    {
+                        aeForm.ReLoad(id);
+                    }
+
+                    if (formObj is Form f)
+                    {
+                        f.StartPosition = FormStartPosition.CenterScreen;
+                        f.ShowDialog();
+                    }
+
+                    LoadMatHangGrid();
+                }
+                else
+                {
+                    Msg.ShowWarning("Không thể khởi tạo màn hình chỉnh sửa mặt hàng!");
+                }
+            }
+            catch (Exception ex)
+            {
+                Msg.ShowError("Lỗi khi chỉnh sửa mặt hàng: " + ex.Message);
+            }
+        }
+
+        private void DoChuyenVaoThungRacMatHang()
+        {
+            try
+            {
+                string id = GetSelectedMatHangID();
+                if (string.IsNullOrEmpty(id))
+                {
+                    Msg.ShowWarning("Vui lòng chọn một mặt hàng để chuyển vào thùng rác!");
+                    return;
+                }
+
+                try
+                {
+                    STABLEDESCRow desc = Config.GetTableDesc(Tables.DMATHANG);
+                    if (desc != null && !string.IsNullOrEmpty(desc.SFUNCTIONID) && !DbUtils.CanDelete(desc.SFUNCTIONID))
+                    {
+                        Msg.ShowWarning("Bạn không có quyền xóa/chuyển mặt hàng vào thùng rác!");
+                        return;
+                    }
+                }
+                catch { }
+
+                string tenHang = GetSelectedMatHangName();
+                string nameDisplay = string.IsNullOrEmpty(tenHang) ? id : tenHang;
+
+                if (Msg.ShowYesNo(string.Format("Bạn có chắc chắn muốn chuyển mặt hàng '{0}' vào thùng rác không?", nameDisplay)) != DialogResult.Yes)
+                {
+                    return;
+                }
+
+                Config.Db.ExecSql(string.Format("UPDATE DMATHANG SET STATUS = 0, TAMKHOA = 1 WHERE ID = '{0}'", id));
+                Msg.ShowInfo(string.Format("Đã chuyển mặt hàng '{0}' vào thùng rác!", nameDisplay));
+                LoadMatHangGrid();
+            }
+            catch (Exception ex)
+            {
+                Msg.ShowError("Lỗi khi chuyển mặt hàng vào thùng rác: " + ex.Message);
+            }
+        }
+
+        private void DoXoaMatHangKhoiHeThong()
+        {
+            try
+            {
+                string id = GetSelectedMatHangID();
+                if (string.IsNullOrEmpty(id))
+                {
+                    Msg.ShowWarning("Vui lòng chọn một mặt hàng để xóa khỏi hệ thống!");
+                    return;
+                }
+
+                try
+                {
+                    STABLEDESCRow desc = Config.GetTableDesc(Tables.DMATHANG);
+                    if (desc != null && !string.IsNullOrEmpty(desc.SFUNCTIONID) && !DbUtils.CanDelete(desc.SFUNCTIONID))
+                    {
+                        Msg.ShowWarning("Bạn không có quyền xóa mặt hàng khỏi hệ thống!");
+                        return;
+                    }
+                }
+                catch { }
+
+                string tenHang = GetSelectedMatHangName();
+                string nameDisplay = string.IsNullOrEmpty(tenHang) ? id : tenHang;
+
+                // Kiểm tra ràng buộc dữ liệu xem đã phát sinh giao dịch chưa
+                int countDh = 0;
+                try { countDh = Config.Db.GetFirstFieldInt(string.Format("SELECT COUNT(*) FROM TDONHANGCHITIET WHERE DMATHANGID = '{0}'", id)); } catch { }
+
+                int countKho = 0;
+                try { countKho = Config.Db.GetFirstFieldInt(string.Format("SELECT COUNT(*) FROM TKHOCHITIET WHERE DMATHANGID = '{0}'", id)); } catch { }
+
+                int countDl = 0;
+                try { countDl = Config.Db.GetFirstFieldInt(string.Format("SELECT COUNT(*) FROM DDINHLUONG WHERE DMATHANGID = '{0}' OR DVATTUID = '{0}'", id)); } catch { }
+
+                int countKm = 0;
+                try { countKm = Config.Db.GetFirstFieldInt(string.Format("SELECT COUNT(*) FROM DDOTKHUYENMAICHITIET WHERE DMATHANGID = '{0}' OR DMATHANGTANGID = '{0}'", id)); } catch { }
+
+                if (countDh > 0 || countKho > 0 || countDl > 0 || countKm > 0)
+                {
+                    Msg.ShowWarning(string.Format("Mặt hàng '{0}' đã phát sinh giao dịch hoặc dữ liệu liên kết trong hệ thống!\nKhông thể xóa vĩnh viễn khỏi hệ thống. Bạn vui lòng sử dụng chức năng 'Chuyển vào thùng rác'.", nameDisplay));
+                    return;
+                }
+
+                if (Msg.ShowYesNo(string.Format("CẢNH BÁO: Bạn có chắc chắn muốn XÓA VĨNH VIỄN mặt hàng '{0}' khỏi hệ thống?\nThao tác này KHÔNG thể phục hồi!", nameDisplay)) != DialogResult.Yes)
+                {
+                    return;
+                }
+
+                Config.Db.ExecSql(string.Format("DELETE FROM DMATHANG WHERE ID = '{0}'", id));
+                Msg.ShowInfo(string.Format("Đã xóa vĩnh viễn mặt hàng '{0}' khỏi hệ thống!", nameDisplay));
+                LoadMatHangGrid();
+            }
+            catch (Exception ex)
+            {
+                if (ex.Message.ToLower().Contains("foreign key") || ex.Message.ToLower().Contains("violation of foreign key"))
+                {
+                    Msg.ShowWarning("Mặt hàng này đang được tham chiếu bởi dữ liệu khác, không thể xóa vĩnh viễn!\nBạn vui lòng chọn 'Chuyển vào thùng rác'.");
+                }
+                else
+                {
+                    Msg.ShowError("Lỗi khi xóa mặt hàng khỏi hệ thống: " + ex.Message);
+                }
+            }
+        }
+
+        #endregion
 
         /// <summary>
         /// Tính toán trên từng dòng dữ liệu
@@ -6497,11 +6901,16 @@ SELECT DONGIA,
 		{
             if (DaThanhToan(true)) return;
 
-            if (mapper.ID.Length > 0)
+            if (mapper != null && !string.IsNullOrEmpty(mapper.ID))
             {
-                TamUngDonHang form = (TamUngDonHang)Config.CreateForm(Forms.TamUngDonHang);
-                form.LoadData(mapper.ID, GetDonHangString("TDATHANGID", ""), lblBan.Text);
+                TamUngDonHang form = Config.CreateForm(Forms.TamUngDonHang) as TamUngDonHang ?? new TamUngDonHang();
+                string tenBan = lblBan != null ? lblBan.Text : "";
+                form.LoadData(mapper.ID, GetDonHangString("TDATHANGID", ""), tenBan);
                 form.No1Form1.ShowDialog();
+            }
+            else
+            {
+                Msg.ShowWarning("Vui lòng lưu hóa đơn trước khi thực hiện tạm ứng.");
             }
 		}
 

@@ -34,6 +34,7 @@ namespace No1Run
         None = 0,
         DichVu = 1,
         MatHangKiemVatTu = 2,
+        NguyenLieu = 2,
         MatHangMo = 3,
         DinhLuong = 4,
         DichVuTheoGio = 5,
@@ -113,6 +114,12 @@ namespace No1Run
         public DateTime INTAMTINHLUC { get { return ConvertTo.Date(this["INTAMTINHLUC"]); } set { this["INTAMTINHLUC"] = value; } }
         public int SOLANINTAMTINH { get { return ConvertTo.Int(this["SOLANINTAMTINH"]); } set { this["SOLANINTAMTINH"] = value; } }
         public int TUTHAYDOIGIO { get { return ConvertTo.Int(this["TUTHAYDOIGIO"]); } set { this["TUTHAYDOIGIO"] = value; } }
+        public DateTime TUNGAY { get { return ConvertTo.Date(this["TUNGAY"]); } set { this["TUNGAY"] = value; } }
+        public DateTime DENNGAY { get { return ConvertTo.Date(this["DENNGAY"]); } set { this["DENNGAY"] = value; } }
+        public string TENKHACH { get { return ConvertTo.String(this["TENKHACH"]); } set { this["TENKHACH"] = value; } }
+        public string NOTE { get { return ConvertTo.String(this["NOTE"]); } set { this["NOTE"] = value; } }
+        public int MAUSAC { get { return ConvertTo.Int(this["MAUSAC"]); } set { this["MAUSAC"] = value; } }
+        public string GUID { get { return ConvertTo.String(this["GUID"]); } set { this["GUID"] = value; } }
 
         public TDATHANGRow() { }
         public TDATHANGRow(DataRow r) { this.Row = r; }
@@ -124,6 +131,51 @@ namespace No1Run
         {
             get { return Row != null && Row.Table.Columns.Contains(col) ? Row[col] : DBNull.Value; }
             set { if (Row != null && Row.Table.Columns.Contains(col)) Row[col] = value; }
+        }
+
+        public void Update()
+        {
+            if (string.IsNullOrEmpty(ID)) return;
+            try
+            {
+                string sql = "UPDATE TDATHANG SET TUNGAY = @TUNGAY, DENNGAY = @DENNGAY, DBANID = @DBANID WHERE ID = @ID";
+                var cmd = Config.Db.GetCommand(sql);
+                cmd.Parameters.Add("@TUNGAY", FirebirdSql.Data.FirebirdClient.FbDbType.TimeStamp).Value = TUNGAY;
+                cmd.Parameters.Add("@DENNGAY", FirebirdSql.Data.FirebirdClient.FbDbType.TimeStamp).Value = DENNGAY;
+                cmd.Parameters.Add("@DBANID", FirebirdSql.Data.FirebirdClient.FbDbType.VarChar).Value = DBANID;
+                cmd.Parameters.Add("@ID", FirebirdSql.Data.FirebirdClient.FbDbType.VarChar).Value = ID;
+                Config.Db.ExecSql(cmd);
+            }
+            catch { }
+        }
+    }
+
+    public class DLOAIPHONGRow
+    {
+        public DataRow Row { get; set; }
+        public bool IsNull => Row == null;
+        public string ID { get => Row != null && Row.Table.Columns.Contains("ID") ? Row["ID"].ToString() : ""; set => this["ID"] = value; }
+        public string NAME { get => Row != null && Row.Table.Columns.Contains("NAME") ? Row["NAME"].ToString() : ""; set => this["NAME"] = value; }
+        public int MAUNEN { get => Row != null && Row.Table.Columns.Contains("MAUNEN") ? ConvertTo.Int(Row["MAUNEN"]) : 0; set => this["MAUNEN"] = value; }
+        public int MAUCHU { get => Row != null && Row.Table.Columns.Contains("MAUCHU") ? ConvertTo.Int(Row["MAUCHU"]) : 0; set => this["MAUCHU"] = value; }
+
+        public DLOAIPHONGRow() { }
+        public DLOAIPHONGRow(DataRow r) { this.Row = r; }
+        public DLOAIPHONGRow(string id)
+        {
+            try { this.Row = Config.Db.GetFirstRow(string.Format("SELECT * FROM DLOAIPHONG WHERE ID = '{0}'", id)); } catch { }
+        }
+        public object this[string col]
+        {
+            get => Row != null && Row.Table.Columns.Contains(col) ? Row[col] : DBNull.Value;
+            set { if (Row != null && Row.Table.Columns.Contains(col)) Row[col] = value; }
+        }
+    }
+
+    public class TDATHANGAe
+    {
+        public virtual void LoadData(System.Collections.Generic.List<string> lst, DateTime minDate, DateTime maxDate)
+        {
         }
     }
 
@@ -310,6 +362,8 @@ namespace No1Run
         public DateTime BatDau { get; set; }
         public DateTime KetThuc { get; set; }
         public DateTime GioTinhLuong { get; set; }
+        public Control dtBATDAU { get; set; } = new Control();
+        public Control dtKETTHUC { get; set; } = new Control();
         public void SetData(DMATHANGRow mhRow, TDONHANGCHITIETRow ctRow, DateTime batDau, DateTime ketThuc) { }
     }
 
@@ -325,10 +379,9 @@ namespace No1Run
         public No1Lib.Sys.No1Form No1Form1 => this;
     }
 
-    public class TamUngDonHang : No1Lib.Sys.No1Form
+    public class XacNhanXoaLuuVet : No1Lib.Sys.No1Form
     {
         public No1Lib.Sys.No1Form No1Form1 => this;
-        public void LoadData(string tdonhangId, string tdathangId, string tenBan) { }
     }
 
     public class ThayDoiGioVao : No1Lib.Sys.No1Form
@@ -602,6 +655,8 @@ namespace No1Run
                 return new KhuVucControl();
             if (formId == Forms.SuDungDichVu || formId == "141ca9a1-6819-49e2-b8a6-c1ac806ef0a9")
                 return new SuDungDichVu();
+            if (formId == Forms.QuanLyBanHangNhaHang || formId == Forms.QuanLyBanHang || formId == "417e6d1d-ed16-4847-b752-65c3cefbe341")
+                return new No1Run.QuanLyBanHangNhaHang();
             try
             {
                 object result = No1Lib.Sys.Config.CreateForm(formId);
@@ -621,8 +676,32 @@ namespace No1Run
             if (formId == Forms.ChuyenBan || formId == "fa056d74-4455-6677-8899-aabbccddeeff") return new ChuyenBan();
             if (formId == Forms.GiamGiaTheoNhom || formId == "cd3890a7-7788-99aa-bbcc-ddeeff001122" || formId == "db13cbad-8ba5-4d23-8f8a-5128a14e5d03") return new GiamGiaTheoNhom();
             if (formId == Forms.ThongKe || formId == "017234eb-bbcc-ddee-ff00-112233445566" || formId == "1f516fe7-3b71-4cbf-a3e8-61ad116bfa79") return new ThongKe();
+            if (formId == Forms.TamUngDonHang || formId == "064236d2-8fcc-415b-80cb-420e69f19c0c" || formId == "ef5012c9-99aa-bbcc-ddee-ff0011223344") return new TamUngDonHang();
+            if (formId == Forms.ThongKeDoanhThu || formId == "d913c8d9-4395-476c-9612-8ca7f35b6268") return new No1Run.ThongKeDoanhThu();
+            if (formId == Forms.TheoDoiDatPhong || formId == "11f4bf28-9dd4-4a22-8c5c-e912a637576a") return new No1Run.TheoDoiDatPhong();
+            if (formId == Forms.ThongKeMatHangBan || formId == "67500401-1f1e-4c18-a0fc-f487c43f4b0c") return new No1Run.ThongKeMatHangBan();
+            if (formId == Forms.ChiTietBanHangTheoMatHang || formId == "5645abce-8395-4c94-ac64-f2e0e55007d8") return new QuanLyNhaHang.Forms.ChiTietBanHangTheoMatHang();
+            if (formId == Forms.DatGioChoMatHang || formId == "38005bd2-327a-401d-88f9-46a1a219c0af" || formId == "ab167e85-5566-7788-99aa-bbccddeeff00") return new DatGioChoMatHang();
+            if (formId == Forms.LuuVetHoatDong || formId == "ac206bb6-0236-48a6-b558-b674e015c21c") return new No1Run.LuuVetHoatDong();
+            if (formId == Forms.XacNhanXoaLuuVet || formId == "c73a5edd-3c2c-452e-83de-48f6790bb32e") return new XacNhanXoaLuuVet();
+            if (formId == Forms.KiemSoatOrder || formId == "8cb6cbb8-5303-4425-a086-7e8280a4cb3e") return new No1Run.KiemSoatOrder();
+            if (formId == Forms.DanhSachBillHuy || formId == "a52478cf-2d23-4ff0-8b63-e098e5ce6829") return new No1Run.DanhSachBillHuy();
+            if (formId == Forms.KhachHangThanThiet || formId == "10e06969-754e-404a-9ea4-1f0d4574ddb7") return new No1Run.KhachHangThanThiet();
+            if (formId == Forms.KhoHang || formId == "aad0140d-3805-490a-9698-6a947b1f8af5") return new No1Lib.Sys.TreeDataMg(null, "DKHOHANG");
             return null;
         }
+    }
+
+    public static class DKHACHHANGInfo
+    {
+        public const string DNHOMKHACHHANGID = "DNHOMKHACHHANGID";
+        public const string ID = "ID";
+        public const string NAME = "NAME";
+    }
+
+    public static class TTANGGIAMDIEMInfo
+    {
+        public const string DKHACHHANGID = "DKHACHHANGID";
     }
 
     public static class DBANInfo
